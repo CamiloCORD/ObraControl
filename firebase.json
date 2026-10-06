@@ -1,0 +1,39 @@
+{
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "control-gas-natural",
+          "appId": "1:202554915691:android:df769490e07abd421fea2e",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "control-gas-natural",
+          "configurations": {
+            "android": "1:202554915691:android:df769490e07abd421fea2e",
+            "ios": "1:202554915691:ios:321d95b028b6a3891fea2e",
+            "macos": "1:202554915691:ios:321d95b028b6a3891fea2e",
+            "web": "1:202554915691:web:0f3c05371ae134551fea2e",
+            "windows": "1:202554915691:web:02d7422fe6187ea51fea2e"
+          }
+        }
+      }
+    }
+  }
+}

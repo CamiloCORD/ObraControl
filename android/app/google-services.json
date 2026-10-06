@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "202554915691",
+    "project_id": "control-gas-natural",
+    "storage_bucket": "control-gas-natural.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:202554915691:android:df769490e07abd421fea2e",
+        "android_client_info": {
+          "package_name": "com.controlgas.app.control_gas_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQDmHPdebu3Jxpasz6EMeMTrfzAZ0GFRI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
