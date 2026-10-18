@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.controlgas.app.control_gas_app"
+    namespace = "com.tuempresa.obracontrol"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -19,7 +19,7 @@ android {
 
     defaultConfig {
         // ID único generado para tu aplicación
-        applicationId = "com.controlgas.app.control_gas_app"
+        applicationId = "com.tuempresa.obracontrol"
         
         // Se define explícitamente en 21 como requisito de Firebase y compresión de imágenes
         minSdk = flutter.minSdkVersion

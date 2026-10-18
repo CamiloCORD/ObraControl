@@ -12,6 +12,21 @@ import '../models/trabajador_model.dart';
 import '../models/vivienda_model.dart';
 import '../utils/download_helper.dart';
 
+/// Resultado del parseo de un archivo Excel de importación de viviendas.
+class ResultadoLecturaExcel {
+  final List<Map<String, String>> filas;
+  final int filasVacias;
+  final List<String> codigosRepetidosInterno; // duplicados dentro del mismo archivo
+  final int totalFilasDetectadas;
+
+  const ResultadoLecturaExcel({
+    required this.filas,
+    required this.filasVacias,
+    required this.codigosRepetidosInterno,
+    required this.totalFilasDetectadas,
+  });
+}
+
 class ExcelService {
   // =========================================================================
   // 1. REPORTE DE CASAS POR LOTE
@@ -45,11 +60,13 @@ class ExcelService {
     final headers = [
       'Código Casa',
       'Estado',
-      'Técnico Encargado',
+      'Nombre del Propietario / Dueño',
       'Cédula Propietario',
       'Teléfono Propietario',
       'Dirección',
+      'Técnico Encargado',
       'Fecha Instalación',
+      'Fecha Terminación',
       'Observaciones',
       'Evidencias (Cant. Fotos)',
     ];
@@ -78,23 +95,33 @@ class ExcelService {
             .value = val;
       }
 
-      setCell(0, TextCellValue(v.id));
+      setCell(0, TextCellValue(v.codigoVisual));
       setCell(1, TextCellValue(v.estado));
       setCell(
           2,
-          TextCellValue(v.tecnicoNombre.isNotEmpty
-              ? v.tecnicoNombre
-              : (v.tecnicoId.isNotEmpty ? v.tecnicoId : 'Sin asignar')));
+          TextCellValue(v.nombrePropietario.isNotEmpty
+              ? v.nombrePropietario
+              : 'Sin registrar'));
       setCell(3, TextCellValue(v.propietarioCedula));
       setCell(4, TextCellValue(v.propietarioTelefono));
       setCell(5, TextCellValue(v.direccion));
       setCell(
           6,
+          TextCellValue(v.tecnicoNombre.isNotEmpty
+              ? v.tecnicoNombre
+              : (v.tecnicoId.isNotEmpty ? v.tecnicoId : 'Sin asignar')));
+      setCell(
+          7,
           TextCellValue(v.fechaInstalacion != null
               ? dateFmt.format(v.fechaInstalacion!)
               : ''));
-      setCell(7, TextCellValue(v.observaciones));
-      setCell(8, IntCellValue(v.fotos.length));
+      setCell(
+          8,
+          TextCellValue(v.fechaTerminacion != null
+              ? dateFmt.format(v.fechaTerminacion!)
+              : ''));
+      setCell(9, TextCellValue(v.observaciones));
+      setCell(10, IntCellValue(v.fotos.length));
     }
 
     final fileBytes = excel.save();
@@ -176,11 +203,11 @@ class ExcelService {
       verticalAlign: VerticalAlign.Center,
     );
 
-    // Fila 0: Título oficial ELECTRO - GAS
+    // Fila 0: Título oficial ObraControl
     sheet.merge(
       CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0),
       CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: 0),
-      customValue: TextCellValue('PLANILLA DE ASISTENCIA Y NÓMINA - ELECTRO - GAS'),
+      customValue: TextCellValue('PLANILLA DE ASISTENCIA Y NÓMINA - OBRACONTROL'),
     );
     for (int c = 0; c <= 6; c++) {
       sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0)).cellStyle = titleStyle;
@@ -239,7 +266,7 @@ class ExcelService {
       verticalAlign: VerticalAlign.Center,
     );
 
-    int totalDiasGlobal = 0;
+    double totalDiasGlobal = 0.0;
     double totalGanadoGlobal = 0.0;
     double totalValesGlobal = 0.0;
     double totalNetoGlobal = 0.0;
@@ -255,9 +282,11 @@ class ExcelService {
           .toList()
         ..sort((a, b) => a.fecha.compareTo(b.fecha));
 
-      final int diasAsistidos = registro?.diasOcasas ?? asistenciasAyudante.length;
+      final double diasAsistidos = registro?.diasOcasas ??
+          asistenciasAyudante.fold<double>(0.0, (acc, a) => acc + a.valorJornada);
       final double tarifa = registro?.tarifaUnitaria ?? configuracion.tarifaAyudante;
-      final double totalGanado = diasAsistidos * tarifa;
+      final double bonificaciones = registro?.bonificaciones ?? 0.0;
+      final double totalGanado = (diasAsistidos * tarifa) + bonificaciones;
       final double totalVales = registro?.totalAdelantos ?? 0.0;
       final double totalPagado = registro?.totalPagado ?? 0.0;
       final double netoAPagar = totalGanado - totalVales - totalPagado;
@@ -265,14 +294,18 @@ class ExcelService {
       String fechasTexto = '';
       if (asistenciasAyudante.isNotEmpty) {
         fechasTexto = asistenciasAyudante.map((a) {
+          final prefix = a.esMedioDia ? '½ ' : '✓ ';
           try {
-            return chipDateFmt.format(a.fecha);
+            return '$prefix${chipDateFmt.format(a.fecha)}';
           } catch (_) {
-            return '${a.fecha.day}/${a.fecha.month}';
+            return '$prefix${a.fecha.day}/${a.fecha.month}';
           }
         }).join(', ');
       } else if (diasAsistidos > 0) {
-        fechasTexto = '$diasAsistidos días (Registro manual)';
+        final diasStr = diasAsistidos % 1 == 0
+            ? '${diasAsistidos.toInt()}'
+            : diasAsistidos.toStringAsFixed(1);
+        fechasTexto = '$diasStr días (Registro manual)';
       } else {
         fechasTexto = 'Sin asistencia registrada';
       }
@@ -289,7 +322,9 @@ class ExcelService {
 
       // Col 1: Días Asistidos
       final c1 = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: currentRow));
-      c1.value = IntCellValue(diasAsistidos);
+      c1.value = diasAsistidos % 1 == 0
+          ? IntCellValue(diasAsistidos.toInt())
+          : DoubleCellValue(diasAsistidos);
       c1.cellStyle = dataStyleCenter;
 
       // Col 2: Fechas
@@ -333,7 +368,9 @@ class ExcelService {
     );
 
     final t1 = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: rowTot));
-    t1.value = IntCellValue(totalDiasGlobal);
+    t1.value = totalDiasGlobal % 1 == 0
+        ? IntCellValue(totalDiasGlobal.toInt())
+        : DoubleCellValue(totalDiasGlobal);
     t1.cellStyle = CellStyle(
       bold: true,
       fontFamily: getFontFamily(FontFamily.Arial),
@@ -384,7 +421,84 @@ class ExcelService {
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       );
       // ignore: deprecated_member_use
-      await Share.shareXFiles([xFile], text: 'Planilla de Asistencia - ELECTRO - GAS');
+      await Share.shareXFiles([xFile], text: 'Planilla de Asistencia - ObraControl');
     }
+  }
+
+  // =========================================================================
+  // 3. LECTOR DE EXCEL PARA IMPORTACIÓN MASIVA DE VIVIENDAS (WEB-SAFE)
+  // =========================================================================
+
+  /// Parsea en memoria los bytes de un archivo .xlsx con el siguiente formato:
+  /// Col 0: Lote / Sector  | Col 1: Manzana | Col 2: Número Casa
+  /// Col 3: Nombre Cliente | Col 4: Cédula  | Col 5: Celular | Col 6: Dirección
+  ///
+  /// Retorna un [ResultadoLecturaExcel] con las filas válidas, filas vacías y
+  /// códigos repetidos detectados internamente (dentro del mismo archivo).
+  /// NO realiza escrituras en Firestore; eso es responsabilidad de [FirestoreService.importarViviendasDesdeExcel].
+  static ResultadoLecturaExcel leerViviendasDesdeExcel(List<int> bytes) {
+    final excel = Excel.decodeBytes(bytes);
+
+    // Usar la primera hoja disponible
+    final sheetName = excel.tables.keys.first;
+    final sheet = excel.tables[sheetName]!;
+
+    final List<Map<String, String>> filasValidas = [];
+    final Set<String> codigosVistos = {};
+    final List<String> codigosRepetidos = [];
+    int filasVacias = 0;
+    int totalDetectadas = 0;
+
+    // Iterar desde fila 1 (saltando la cabecera en fila 0)
+    for (int rowIdx = 1; rowIdx < sheet.rows.length; rowIdx++) {
+      final row = sheet.rows[rowIdx];
+      totalDetectadas++;
+
+      String celdaStr(int col) {
+        if (col >= row.length) return '';
+        final data = row[col]?.value;
+        if (data == null) return '';
+        return data.toString().trim();
+      }
+
+      final lote = celdaStr(0);
+      final manzana = celdaStr(1).toUpperCase();
+      final numeroCasa = celdaStr(2);
+      final nombrePropietario = celdaStr(3);
+      final cedula = celdaStr(4);
+      final telefono = celdaStr(5);
+      final direccion = celdaStr(6);
+
+      // Fila vacía si los tres campos clave están ausentes
+      if (lote.isEmpty && manzana.isEmpty && numeroCasa.isEmpty) {
+        filasVacias++;
+        continue;
+      }
+
+      // Detectar duplicados internos al archivo
+      final clave = '${lote.toLowerCase()}_${manzana}_${numeroCasa.padLeft(2, '0')}';
+      if (codigosVistos.contains(clave)) {
+        codigosRepetidos.add('$lote / $manzana-$numeroCasa');
+        continue;
+      }
+      codigosVistos.add(clave);
+
+      filasValidas.add({
+        'lote': lote,
+        'manzana': manzana,
+        'numeroCasa': numeroCasa,
+        'nombrePropietario': nombrePropietario,
+        'cedula': cedula,
+        'telefono': telefono,
+        'direccion': direccion,
+      });
+    }
+
+    return ResultadoLecturaExcel(
+      filas: filasValidas,
+      filasVacias: filasVacias,
+      codigosRepetidosInterno: codigosRepetidos,
+      totalFilasDetectadas: totalDetectadas,
+    );
   }
 }

@@ -40,36 +40,46 @@ class ControlGasApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Control Proyecto Gas Natural',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        primaryColor: const Color(0xFF0500D0),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0500D0),
-          primary: const Color(0xFF0500D0),
-          secondary: const Color(0xFFFF6F00),
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0500D0),
-          foregroundColor: Colors.white,
-          elevation: 2,
-        ),
-      ),
-      home: Consumer<AuthProvider>(
-        builder: (context, auth, _) {
-          if (auth.cargando) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-          if (auth.usuario != null) {
-            return const HomeDashboardScreen();
-          }
-          return const LoginScreen();
-        },
-      ),
+    return Consumer<ProyectoProvider>(
+      builder: (context, proyecto, _) {
+        final cfg = proyecto.configuracion;
+        final Color colorPrimario = Color(cfg.colorPrimario);
+        final String tituloApp = cfg.nombreEmpresa.trim().isNotEmpty
+            ? cfg.nombreEmpresa.trim()
+            : 'ObraControl';
+
+        return MaterialApp(
+          title: tituloApp,
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            primaryColor: colorPrimario,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: colorPrimario,
+              primary: colorPrimario,
+              secondary: const Color(0xFFFF6F00),
+            ),
+            appBarTheme: AppBarTheme(
+              backgroundColor: colorPrimario,
+              foregroundColor: Colors.white,
+              elevation: 2,
+            ),
+          ),
+          home: Consumer<AuthProvider>(
+            builder: (context, auth, _) {
+              if (auth.cargando) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (auth.usuario != null) {
+                return const HomeDashboardScreen();
+              }
+              return const LoginScreen();
+            },
+          ),
+        );
+      },
     );
   }
 }

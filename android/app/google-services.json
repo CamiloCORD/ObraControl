@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "202554915691",
-    "project_id": "control-gas-natural",
-    "storage_bucket": "control-gas-natural.firebasestorage.app"
+    "project_number": "637695930390",
+    "project_id": "obracontrol-f5bdf",
+    "storage_bucket": "obracontrol-f5bdf.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:202554915691:android:df769490e07abd421fea2e",
+        "mobilesdk_app_id": "1:637695930390:android:f9513e46256739e02d4537",
         "android_client_info": {
-          "package_name": "com.controlgas.app.control_gas_app"
+          "package_name": "com.tuempresa.obracontrol"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAQDmHPdebu3Jxpasz6EMeMTrfzAZ0GFRI"
+          "current_key": "AIzaSyDo9oK7wbuKIqifuZOawrhZJ-2WUXTYjmY"
         }
       ],
       "services": {

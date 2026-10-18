@@ -21,7 +21,9 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
   late TabController _tabController;
   final NumberFormat _cop = NumberFormat.currency(locale: 'es_CO', symbol: '\$', decimalDigits: 0);
   final DateFormat _formatoFecha = DateFormat('dd/MM/yyyy');
+  final DateFormat _formatoFechaHora = DateFormat('dd/MM/yyyy HH:mm');
   final FirestoreService _firestoreService = FirestoreService();
+  bool _sincronizandoCasas = false;
 
   @override
   void initState() {
@@ -310,11 +312,16 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
     ProyectoProvider proyecto, {
     List<AsistenciaModel> asistencias = const [],
   }) {
-    final diasTrabajados = registro?.diasOcasas ?? 0;
+    final diasTrabajados = (registro?.diasOcasas ?? 0.0).toDouble();
+    final diasStr = diasTrabajados % 1 == 0
+        ? '${diasTrabajados.toInt()}'
+        : diasTrabajados.toStringAsFixed(1);
     final tarifaDiaria = registro?.tarifaUnitaria ?? proyecto.configuracion.tarifaAyudante;
-    final totalGenerado = diasTrabajados * tarifaDiaria;
-    final totalAdelantos = registro?.totalAdelantos ?? 0.0;
-    final totalPagado = registro?.totalPagado ?? 0.0;
+    final bonificaciones = (registro?.bonificaciones ?? 0.0).toDouble();
+    final totalBase = diasTrabajados * tarifaDiaria;
+    final totalGenerado = totalBase + bonificaciones;
+    final totalAdelantos = (registro?.totalAdelantos ?? 0.0).toDouble();
+    final totalPagado = (registro?.totalPagado ?? 0.0).toDouble();
     final saldoNeto = totalGenerado - totalAdelantos - totalPagado;
 
     return Card(
@@ -390,37 +397,57 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                   IconButton(
                     icon: const Icon(Icons.remove_circle_outline, color: Colors.red, size: 20),
                     visualDensity: VisualDensity.compact,
+                    tooltip: 'Restar 0.5 día',
                     onPressed: diasTrabajados > 0
                         ? () async {
+                            final nuevo = (diasTrabajados - 0.5) < 0 ? 0.0 : (diasTrabajados - 0.5);
                             await _firestoreService.actualizarDiasObrasManual(
                               semanaId: semana.id,
                               trabajadorId: ayudante.id,
-                              nuevosDiasObras: diasTrabajados - 1,
+                              nuevosDiasObras: nuevo,
                             );
                           }
                         : null,
                   ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.teal.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.teal.shade200),
-                  ),
-                  child: Text(
-                    '$diasTrabajados',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal.shade800),
+                InkWell(
+                  onTap: semana.cerrada
+                      ? null
+                      : () => _mostrarDialogoEditarNumeroManual(
+                            context,
+                            semana.id,
+                            registro ??
+                                RegistroNominaItem(
+                                  trabajadorId: ayudante.id,
+                                  trabajadorNombre: ayudante.nombre,
+                                  rol: ayudante.rol,
+                                  tarifaUnitaria: tarifaDiaria,
+                                ),
+                            true,
+                          ),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.teal.shade200),
+                    ),
+                    child: Text(
+                      diasStr,
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal.shade800),
+                    ),
                   ),
                 ),
                 if (registro != null && !semana.cerrada)
                   IconButton(
                     icon: Icon(Icons.add_circle_outline, color: Colors.teal.shade700, size: 20),
                     visualDensity: VisualDensity.compact,
+                    tooltip: 'Sumar 0.5 día',
                     onPressed: () async {
                       await _firestoreService.actualizarDiasObrasManual(
                         semanaId: semana.id,
                         trabajadorId: ayudante.id,
-                        nuevosDiasObras: diasTrabajados + 1,
+                        nuevosDiasObras: diasTrabajados + 0.5,
                       );
                     },
                   ),
@@ -443,7 +470,10 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _miniMetrica('Generado', _cop.format(totalGenerado), Colors.black87),
+                  _miniMetrica('Base ($diasStr d)', _cop.format(totalBase), Colors.black87),
+                  if (bonificaciones > 0)
+                    _miniMetrica('(+) Bono', _cop.format(bonificaciones), Colors.purple.shade700),
+                  _miniMetrica('Generado', _cop.format(totalGenerado), Colors.teal.shade900),
                   _miniMetrica('(-) Vales', _cop.format(totalAdelantos), Colors.amber.shade800),
                   _miniMetrica('(-) Pagado', _cop.format(totalPagado), Colors.green.shade700),
                 ],
@@ -455,7 +485,24 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                if (registro != null && !semana.cerrada) ...[
+                if (!semana.cerrada) ...[
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: Colors.purple.shade700,
+                      side: BorderSide(color: Colors.purple.shade300),
+                    ),
+                    icon: const Icon(Icons.card_giftcard_outlined, size: 16),
+                    label: Text(bonificaciones > 0 ? 'Bonos: ${_cop.format(bonificaciones)}' : '+ Bono'),
+                    onPressed: () => _mostrarModalGestionBonos(
+                      context: context,
+                      semanaId: semana.id,
+                      trabajadorId: ayudante.id,
+                      trabajadorNombre: ayudante.nombre,
+                      semanaCerrada: semana.cerrada,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
@@ -463,12 +510,12 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                       side: BorderSide(color: Colors.teal.shade300),
                     ),
                     icon: const Icon(Icons.today_outlined, size: 16),
-                    label: const Text('+ Registrar Día'),
+                    label: const Text('+ 1 Día'),
                     onPressed: () async {
                       await _firestoreService.actualizarDiasObrasManual(
                         semanaId: semana.id,
                         trabajadorId: ayudante.id,
-                        nuevosDiasObras: diasTrabajados + 1,
+                        nuevosDiasObras: diasTrabajados + 1.0,
                       );
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -491,6 +538,36 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                     onPressed: () => _mostrarDialogoRegistrarPrestamo(context, proyecto, semana,
                         preseleccionId: ayudante.id),
                   ),
+                  if (registro != null) ...[
+                    const SizedBox(width: 6),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: const Color(0xFF0D47A1),
+                        side: const BorderSide(color: Color(0xFF0D47A1)),
+                      ),
+                      icon: const Icon(Icons.attach_money, size: 16),
+                      label: const Text('Abonar'),
+                      onPressed: semana.cerrada
+                          ? null
+                          : () => _mostrarDialogoAbonarPago(context, semana.id, registro, semana: semana),
+                    ),
+                    const SizedBox(width: 6),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: Colors.green.shade800,
+                        side: BorderSide(color: Colors.green.shade300),
+                      ),
+                      icon: const Icon(Icons.history, size: 16),
+                      label: Text(
+                        registro.pagos.isNotEmpty
+                            ? 'Abonos (${registro.pagos.length})'
+                            : (registro.totalPagado > 0 ? 'Abonos (1)' : 'Abonos (0)'),
+                      ),
+                      onPressed: () => _mostrarModalHistorialAbonos(context, semana, registro),
+                    ),
+                  ],
                   const SizedBox(width: 6),
                 ],
                 IconButton(
@@ -511,6 +588,7 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                             nombreSemana: semana.numeroSemana,
                             periodoSemana: periodo,
                             vales: vales,
+                            configuracion: Provider.of<ProyectoProvider>(context, listen: false).configuracion,
                           );
                         },
                 ),
@@ -556,23 +634,30 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                           String etiqueta;
                           try {
                             final fmt = DateFormat('EEE dd/MMM', 'es_CO');
-                            etiqueta = '✓ ${fmt.format(asist.fecha)}';
+                            etiqueta = asist.esMedioDia
+                                ? '½ ${fmt.format(asist.fecha)}'
+                                : '✓ ${fmt.format(asist.fecha)}';
                           } catch (_) {
-                            etiqueta = '✓ ${asist.fecha.day}/${asist.fecha.month}';
+                            etiqueta = asist.esMedioDia
+                                ? '½ ${asist.fecha.day}/${asist.fecha.month}'
+                                : '✓ ${asist.fecha.day}/${asist.fecha.month}';
                           }
+                          final bool esMedio = asist.esMedioDia;
                           return Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.teal.shade50,
+                              color: esMedio ? const Color(0xFFFEF3C7) : Colors.teal.shade50,
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: Colors.teal.shade300),
+                              border: Border.all(
+                                color: esMedio ? Colors.amber.shade400 : Colors.teal.shade300,
+                              ),
                             ),
                             child: Text(
                               etiqueta,
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.teal.shade900,
+                                color: esMedio ? Colors.amber.shade900 : Colors.teal.shade900,
                               ),
                             ),
                           );
@@ -596,6 +681,32 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                     ),
                 ],
               ),
+            ),
+
+            // DESGLOSE EXPANDIBLE: BONOS / INCENTIVOS
+            _construirSeccionBonosTrabajador(
+              context: context,
+              semanaId: semana.id,
+              semanaCerrada: semana.cerrada,
+              bonos: registro?.bonos.isNotEmpty == true
+                  ? registro!.bonos
+                  : semana.bonos.where((b) => b.trabajadorId == ayudante.id).toList(),
+              trabajadorId: ayudante.id,
+              trabajadorNombre: ayudante.nombre,
+            ),
+
+            // DESGLOSE EXPANDIBLE: VALES / ADELANTOS
+            const SizedBox(height: 4),
+            _construirSeccionValesTrabajador(
+              context: context,
+              semanaId: semana.id,
+              semanaCerrada: semana.cerrada,
+              vales: registro?.prestamos.isNotEmpty == true
+                  ? registro!.prestamos
+                  : semana.prestamos.where((p) => p.trabajadorId == ayudante.id).toList(),
+              trabajadorId: ayudante.id,
+              trabajadorNombre: ayudante.nombre,
+              colorTema: Colors.teal.shade800,
             ),
           ],
         ),
@@ -634,17 +745,25 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
         }
 
         return Scaffold(
-          body: ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: tecnicos.length,
-            itemBuilder: (context, index) {
-              final tecnico = tecnicos[index];
-              final registro = semana.registros.where(
-                (r) => r.trabajadorId == tecnico.id && r.esTecnico,
-              ).firstOrNull;
+          body: Column(
+            children: [
+              // BANNER CORPORATIVO CON BOTÓN DE RECONCILIACIÓN Y SINCRONIZACIÓN DE CASAS
+              _construirBannerSincronizacionTecnicos(context, proyecto, semana),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: tecnicos.length,
+                  itemBuilder: (context, index) {
+                    final tecnico = tecnicos[index];
+                    final registro = semana.registros.where(
+                      (r) => r.trabajadorId == tecnico.id && r.esTecnico,
+                    ).firstOrNull;
 
-              return _construirTarjetaTecnicoReactiva(context, tecnico, registro, semana, proyecto);
-            },
+                    return _construirTarjetaTecnicoReactiva(context, tecnico, registro, semana, proyecto);
+                  },
+                ),
+              ),
+            ],
           ),
           floatingActionButton: FloatingActionButton.extended(
             backgroundColor: const Color(0xFF0D47A1),
@@ -659,6 +778,143 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
     );
   }
 
+  /// Banner institucional superior para la pestaña de técnicos con botón de reconciliación
+  Widget _construirBannerSincronizacionTecnicos(
+    BuildContext context,
+    ProyectoProvider proyecto,
+    SemanaModel semana,
+  ) {
+    final int totalCasasSemana = semana.registros
+        .where((r) => r.esTecnico)
+        .fold(0, (acc, r) => acc + r.diasOcasas.toInt());
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF0500D0),
+            Color(0xFF1E3A8A),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0500D0).withValues(alpha: 0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.engineering_outlined, color: Colors.white, size: 22),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'LIQUIDACIÓN DE TÉCNICOS',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  Text(
+                    '$totalCasasSemana casas terminadas en nómina',
+                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF0500D0),
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            icon: _sincronizandoCasas
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFF0500D0),
+                    ),
+                  )
+                : const Icon(Icons.published_with_changes, size: 16),
+            label: Text(
+              _sincronizandoCasas ? 'Sincronizando...' : 'Sincronizar Casas',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+            onPressed: _sincronizandoCasas
+                ? null
+                : () => _ejecutarSincronizacionCasas(semana),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Ejecuta la auditoría y reconciliación forzada de viviendas terminadas con la semana activa
+  Future<void> _ejecutarSincronizacionCasas(SemanaModel semana) async {
+    setState(() => _sincronizandoCasas = true);
+    try {
+      final resultado = await _firestoreService.reconciliarCasasTerminadasConSemana(
+        semanaId: semana.id,
+        fechaInicioSemana: semana.fechaInicio,
+        fechaFinSemana: semana.fechaFin,
+      );
+
+      final total = resultado['totalCasasTerminadas'] ?? 0;
+      final revinculadas = resultado['casasRevinculadas'] ?? 0;
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.green.shade800,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_outline, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Sincronización completa: $total casas validadas ($revinculadas viviendas huérfanas vinculadas exitosamente)',
+                  style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade800,
+          behavior: SnackBarBehavior.floating,
+          content: Text('Error al sincronizar casas: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _sincronizandoCasas = false);
+      }
+    }
+  }
+
   Widget _construirTarjetaTecnicoReactiva(
     BuildContext context,
     TrabajadorModel tecnico,
@@ -669,17 +925,24 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
     final tarifaPorCasa = registro?.tarifaUnitaria ?? proyecto.configuracion.tarifaTecnico;
     final totalAdelantos = registro?.totalAdelantos ?? 0.0;
     final totalPagado = registro?.totalPagado ?? 0.0;
+    final bonificaciones = registro?.bonificaciones ?? 0.0;
 
     return StreamBuilder<List<ViviendaModel>>(
       stream: _firestoreService.streamCasasTerminadasTecnicoEnSemana(
         tecnicoId: tecnico.id,
         fechaInicio: semana.fechaInicio,
         fechaFin: semana.fechaFin,
+        semanaId: semana.id,
       ),
       builder: (context, casasSnapshot) {
         final casasTerminadas = casasSnapshot.data ?? [];
-        final cantidadCasas = casasTerminadas.length;
-        final totalGeneradoBruto = cantidadCasas * tarifaPorCasa;
+        final int conteoStream = casasTerminadas.length;
+        final int conteoRegistro = registro?.diasOcasas.toInt() ?? 0;
+        final int cantidadCasas = casasSnapshot.hasData
+            ? (conteoStream > 0 ? conteoStream : conteoRegistro)
+            : conteoRegistro;
+        final baseGenerada = cantidadCasas * tarifaPorCasa;
+        final totalGeneradoBruto = baseGenerada + bonificaciones;
         final totalAPagar = totalGeneradoBruto - totalAdelantos - totalPagado;
 
         return Card(
@@ -791,13 +1054,23 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     else
-                      Text(
-                        'Total Bruto: ${_cop.format(totalGeneradoBruto)}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue.shade800,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'Total Devengado: ${_cop.format(totalGeneradoBruto)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade800,
+                            ),
+                          ),
+                          if (bonificaciones > 0)
+                            Text(
+                              '(${_cop.format(baseGenerada)} + Bono ${_cop.format(bonificaciones)})',
+                              style: TextStyle(fontSize: 10, color: Colors.purple.shade700, fontWeight: FontWeight.w600),
+                            ),
+                        ],
                       ),
                   ],
                 ),
@@ -813,7 +1086,9 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _miniMetrica('Bruto', _cop.format(totalGeneradoBruto), Colors.blue.shade800),
+                      _miniMetrica('Base ($cantidadCasas c)', _cop.format(baseGenerada), Colors.blue.shade800),
+                      if (bonificaciones > 0)
+                        _miniMetrica('(+) Bono', _cop.format(bonificaciones), Colors.purple.shade700),
                       _miniMetrica('(-) Vales', _cop.format(totalAdelantos), Colors.amber.shade800),
                       _miniMetrica('(-) Pagado', _cop.format(totalPagado), Colors.green.shade700),
                       _miniMetrica(
@@ -827,8 +1102,11 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                 const SizedBox(height: 12),
 
                 // BOTONES DE ACCIÓN
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
@@ -841,8 +1119,24 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                           ? null
                           : () => _mostrarModalCasasCompletadas(context, tecnico.nombre, casasTerminadas),
                     ),
-                    const SizedBox(width: 6),
-                    if (registro != null && !semana.cerrada)
+                    if (!semana.cerrada)
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          foregroundColor: Colors.purple.shade800,
+                          side: BorderSide(color: Colors.purple.shade300),
+                        ),
+                        icon: const Icon(Icons.card_giftcard, size: 16),
+                        label: Text(bonificaciones > 0 ? 'Bonos: ${_cop.format(bonificaciones)}' : '+ Bono'),
+                        onPressed: () => _mostrarModalGestionBonos(
+                          context: context,
+                          semanaId: semana.id,
+                          trabajadorId: tecnico.id,
+                          trabajadorNombre: tecnico.nombre,
+                          semanaCerrada: semana.cerrada,
+                        ),
+                      ),
+                    if (!semana.cerrada)
                       OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
                           visualDensity: VisualDensity.compact,
@@ -854,31 +1148,95 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                         onPressed: () => _mostrarDialogoRegistrarPrestamo(context, proyecto, semana,
                             preseleccionId: tecnico.id),
                       ),
-                    const SizedBox(width: 6),
+                    if (registro != null) ...[
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          foregroundColor: const Color(0xFF0D47A1),
+                          side: const BorderSide(color: Color(0xFF0D47A1)),
+                        ),
+                        icon: const Icon(Icons.attach_money, size: 16),
+                        label: const Text('Abonar'),
+                        onPressed: semana.cerrada
+                            ? null
+                            : () => _mostrarDialogoAbonarPago(context, semana.id, registro, semana: semana),
+                      ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          foregroundColor: Colors.green.shade800,
+                          side: BorderSide(color: Colors.green.shade300),
+                        ),
+                        icon: const Icon(Icons.history, size: 16),
+                        label: Text(
+                          registro.pagos.isNotEmpty
+                              ? 'Abonos (${registro.pagos.length})'
+                              : (registro.totalPagado > 0 ? 'Abonos (1)' : 'Abonos (0)'),
+                        ),
+                        onPressed: () => _mostrarModalHistorialAbonos(context, semana, registro),
+                      ),
+                    ],
                     IconButton(
                       icon: const Icon(Icons.share, color: Colors.green, size: 22),
                       tooltip: 'Comprobante PDF',
-                      onPressed: registro == null
-                          ? null
-                          : () {
-                              final regConCasas = registro.copyWith(diasOcasas: cantidadCasas);
-                              final periodo =
-                                  '${_formatoFecha.format(semana.fechaInicio)} – ${_formatoFecha.format(semana.fechaFin)}';
-                              final vales = registro.prestamos.isNotEmpty
-                                  ? registro.prestamos
-                                  : semana.prestamos.where((p) => p.trabajadorId == tecnico.id).toList();
+                      onPressed: () {
+                        final regConCasas = (registro ?? RegistroNominaItem(
+                          trabajadorId: tecnico.id,
+                          trabajadorNombre: tecnico.nombre,
+                          rol: tecnico.rol,
+                          diasOcasas: cantidadCasas.toDouble(),
+                          tarifaUnitaria: tarifaPorCasa,
+                          totalAdelantos: totalAdelantos,
+                          totalPagado: totalPagado,
+                          bonificaciones: bonificaciones,
+                        )).copyWith(
+                          diasOcasas: cantidadCasas.toDouble(),
+                          bonificaciones: bonificaciones,
+                        );
+                        final periodo =
+                            '${_formatoFecha.format(semana.fechaInicio)} – ${_formatoFecha.format(semana.fechaFin)}';
+                        final vales = registro?.prestamos.isNotEmpty == true
+                            ? registro!.prestamos
+                            : semana.prestamos.where((p) => p.trabajadorId == tecnico.id).toList();
 
-                              PdfService.generarYCompartirComprobanteTecnico(
-                                trabajador: tecnico,
-                                registro: regConCasas,
-                                nombreSemana: semana.numeroSemana,
-                                periodoSemana: periodo,
-                                viviendasCompletadas: casasTerminadas,
-                                vales: vales,
-                              );
-                            },
+                        PdfService.generarYCompartirComprobanteTecnico(
+                          trabajador: tecnico,
+                          registro: regConCasas,
+                          nombreSemana: semana.numeroSemana,
+                          periodoSemana: periodo,
+                          viviendasCompletadas: casasTerminadas,
+                          vales: vales,
+                          configuracion: Provider.of<ProyectoProvider>(context, listen: false).configuracion,
+                        );
+                      },
                     ),
                   ],
+                ),
+
+                // DESGLOSE EXPANDIBLE: BONOS / INCENTIVOS
+                _construirSeccionBonosTrabajador(
+                  context: context,
+                  semanaId: semana.id,
+                  semanaCerrada: semana.cerrada,
+                  bonos: registro?.bonos.isNotEmpty == true
+                      ? registro!.bonos
+                      : semana.bonos.where((b) => b.trabajadorId == tecnico.id).toList(),
+                  trabajadorId: tecnico.id,
+                  trabajadorNombre: tecnico.nombre,
+                ),
+
+                // DESGLOSE EXPANDIBLE: VALES / ADELANTOS
+                const SizedBox(height: 4),
+                _construirSeccionValesTrabajador(
+                  context: context,
+                  semanaId: semana.id,
+                  semanaCerrada: semana.cerrada,
+                  vales: registro?.prestamos.isNotEmpty == true
+                      ? registro!.prestamos
+                      : semana.prestamos.where((p) => p.trabajadorId == tecnico.id).toList(),
+                  trabajadorId: tecnico.id,
+                  trabajadorNombre: tecnico.nombre,
+                  colorTema: const Color(0xFF0D47A1),
                 ),
               ],
             ),
@@ -959,7 +1317,7 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                           border: Border.all(color: Colors.green.shade200),
                         ),
                         child: Text(
-                          casa.id,
+                          casa.codigoVisual,
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             color: Colors.green.shade800,
@@ -1270,6 +1628,30 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                     ),
                   ),
                 ),
+                IconButton(
+                  icon: _sincronizandoCasas
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0D47A1)),
+                        )
+                      : const Icon(Icons.published_with_changes, color: Color(0xFF0D47A1), size: 20),
+                  tooltip: 'Reconciliar y sincronizar viviendas terminadas',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _sincronizandoCasas ? null : () => _ejecutarSincronizacionCasas(semana),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.edit_calendar_outlined, color: Color(0xFF0D47A1), size: 20),
+                  tooltip: 'Editar Semana (Fechas y Número)',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _mostrarDialogoEditarSemana(context, proyecto, semana),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                  tooltip: 'Eliminar Semana con PIN',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _confirmarEliminarSemana(context, proyecto, semana),
+                ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
@@ -1327,6 +1709,7 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                   onPressed: () => PdfService.exportarReporteConsolidadoGeneral(
                     semana: semana,
                     registros: semana.registros,
+                    configuracion: proyecto.configuracion,
                   ),
                 ),
                 if (!semana.cerrada)
@@ -1385,6 +1768,10 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
     SemanaModel semana, {
     required bool esAyudante,
   }) {
+    final diasStr = item.diasOcasas % 1 == 0
+        ? item.diasOcasas.toInt().toString()
+        : item.diasOcasas.toStringAsFixed(1);
+
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 10),
@@ -1452,13 +1839,15 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                       IconButton(
                         icon: const Icon(Icons.remove_circle_outline, color: Colors.red, size: 20),
                         visualDensity: VisualDensity.compact,
-                        tooltip: 'Restar',
+                        tooltip: esAyudante ? 'Restar 0.5 días' : 'Restar 1 casa',
                         onPressed: item.diasOcasas > 0
                             ? () async {
+                                final paso = esAyudante ? 0.5 : 1.0;
+                                final nuevo = (item.diasOcasas - paso).clamp(0.0, 999.0);
                                 await _firestoreService.actualizarDiasObrasManual(
                                   semanaId: semana.id,
                                   trabajadorId: item.trabajadorId,
-                                  nuevosDiasObras: item.diasOcasas - 1,
+                                  nuevosDiasObras: nuevo,
                                 );
                               }
                             : null,
@@ -1476,7 +1865,7 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                           border: Border.all(color: Colors.grey.shade300),
                         ),
                         child: Text(
-                          '${item.diasOcasas}',
+                          diasStr,
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                         ),
                       ),
@@ -1485,12 +1874,13 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                       IconButton(
                         icon: const Icon(Icons.add_circle_outline, color: Colors.green, size: 20),
                         visualDensity: VisualDensity.compact,
-                        tooltip: 'Sumar',
+                        tooltip: esAyudante ? 'Sumar 0.5 días' : 'Sumar 1 casa',
                         onPressed: () async {
+                          final paso = esAyudante ? 0.5 : 1.0;
                           await _firestoreService.actualizarDiasObrasManual(
                             semanaId: semana.id,
                             trabajadorId: item.trabajadorId,
-                            nuevosDiasObras: item.diasOcasas + 1,
+                            nuevosDiasObras: item.diasOcasas + paso,
                           );
                         },
                       ),
@@ -1509,11 +1899,15 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                 color: Colors.grey.shade50,
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 4,
                 children: [
-                  Text('Generado: ${_cop.format(item.totalGenerado)}',
+                  Text('Devengado: ${_cop.format(item.totalGenerado)}',
                       style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                  if (item.bonificaciones > 0)
+                    Text('(+) Bono: ${_cop.format(item.bonificaciones)}',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.purple.shade700)),
                   Text('(-) Vales: ${_cop.format(item.totalAdelantos)}',
                       style: TextStyle(fontSize: 11, color: Colors.amber.shade900)),
                   Text('(-) Pagado: ${_cop.format(item.totalPagado)}',
@@ -1522,9 +1916,29 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
               ),
             ),
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
+                if (!semana.cerrada)
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: Colors.purple.shade800,
+                      side: BorderSide(color: Colors.purple.shade300),
+                    ),
+                    icon: const Icon(Icons.card_giftcard, size: 16),
+                    label: Text(item.bonificaciones > 0 ? 'Bonos: ${_cop.format(item.bonificaciones)}' : '+ Bono'),
+                    onPressed: () => _mostrarModalGestionBonos(
+                      context: context,
+                      semanaId: semana.id,
+                      trabajadorId: item.trabajadorId,
+                      trabajadorNombre: item.trabajadorNombre,
+                      semanaCerrada: semana.cerrada,
+                    ),
+                  ),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact,
@@ -1534,9 +1948,22 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                   label: const Text('Abonar'),
                   onPressed: semana.cerrada
                       ? null
-                      : () => _mostrarDialogoAbonarPago(context, semana.id, item),
+                      : () => _mostrarDialogoAbonarPago(context, semana.id, item, semana: semana),
                 ),
-                const SizedBox(width: 6),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: Colors.green.shade800,
+                    side: BorderSide(color: Colors.green.shade300),
+                  ),
+                  icon: const Icon(Icons.history, size: 16),
+                  label: Text(
+                    item.pagos.isNotEmpty
+                        ? 'Abonos (${item.pagos.length})'
+                        : (item.totalPagado > 0 ? 'Abonos (1)' : 'Abonos (0)'),
+                  ),
+                  onPressed: () => _mostrarModalHistorialAbonos(context, semana, item),
+                ),
                 IconButton(
                   icon: const Icon(Icons.share, color: Colors.green, size: 20),
                   tooltip: 'Comprobante PDF (WhatsApp)',
@@ -1576,7 +2003,7 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
 
                       final regConCasas = item.copyWith(
                         diasOcasas:
-                            casasTecnico.isNotEmpty ? casasTecnico.length : item.diasOcasas,
+                            casasTecnico.isNotEmpty ? casasTecnico.length.toDouble() : item.diasOcasas,
                       );
 
                       PdfService.generarYCompartirComprobanteTecnico(
@@ -1586,6 +2013,7 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                         periodoSemana: periodo,
                         viviendasCompletadas: casasTecnico,
                         vales: vales,
+                        configuracion: Provider.of<ProyectoProvider>(context, listen: false).configuracion,
                       );
                     } else {
                       PdfService.generarYCompartirComprobanteAyudante(
@@ -1594,11 +2022,38 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
                         nombreSemana: semana.numeroSemana,
                         periodoSemana: periodo,
                         vales: vales,
+                        configuracion: Provider.of<ProyectoProvider>(context, listen: false).configuracion,
                       );
                     }
                   },
                 ),
               ],
+            ),
+
+            // DESGLOSE EXPANDIBLE: BONOS / INCENTIVOS
+            _construirSeccionBonosTrabajador(
+              context: context,
+              semanaId: semana.id,
+              semanaCerrada: semana.cerrada,
+              bonos: item.bonos.isNotEmpty
+                  ? item.bonos
+                  : semana.bonos.where((b) => b.trabajadorId == item.trabajadorId).toList(),
+              trabajadorId: item.trabajadorId,
+              trabajadorNombre: item.trabajadorNombre,
+            ),
+
+            // DESGLOSE EXPANDIBLE: VALES / ADELANTOS
+            const SizedBox(height: 4),
+            _construirSeccionValesTrabajador(
+              context: context,
+              semanaId: semana.id,
+              semanaCerrada: semana.cerrada,
+              vales: item.prestamos.isNotEmpty
+                  ? item.prestamos
+                  : semana.prestamos.where((p) => p.trabajadorId == item.trabajadorId).toList(),
+              trabajadorId: item.trabajadorId,
+              trabajadorNombre: item.trabajadorNombre,
+              colorTema: const Color(0xFF0D47A1),
             ),
           ],
         ),
@@ -2003,66 +2458,1860 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
   }
 
   // =========================================================================
-  // MODAL ABONAR PAGO
+  // SECCIÓN EXPANDIBLE DE VALES / ADELANTOS POR TRABAJADOR
   // =========================================================================
-  void _mostrarDialogoAbonarPago(
-      BuildContext context, String semanaId, RegistroNominaItem item) {
-    final montoCtrl = TextEditingController(
-      text: item.saldoPendiente > 0 ? item.saldoPendiente.toInt().toString() : '',
+  Widget _construirSeccionValesTrabajador({
+    required BuildContext context,
+    required String semanaId,
+    required bool semanaCerrada,
+    required List<PrestamoModel> vales,
+    required String trabajadorId,
+    required String trabajadorNombre,
+    required Color colorTema,
+  }) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(top: 4, bottom: 4),
+        collapsedIconColor: Colors.amber.shade800,
+        iconColor: Colors.amber.shade900,
+        leading: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: vales.isNotEmpty ? Colors.amber.shade50 : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Icon(
+            Icons.price_change_outlined,
+            size: 16,
+            color: vales.isNotEmpty ? Colors.amber.shade800 : Colors.grey.shade500,
+          ),
+        ),
+        title: Text(
+          'Vales / Adelantos (${vales.length} registrado${vales.length == 1 ? "" : "s"})',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: vales.isNotEmpty ? Colors.amber.shade900 : Colors.grey.shade700,
+          ),
+        ),
+        children: [
+          if (vales.isNotEmpty)
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: vales.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 6),
+              itemBuilder: (ctx, idx) {
+                final vale = vales[idx];
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade100,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.attach_money, size: 14, color: Colors.amber.shade900),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              vale.concepto.isNotEmpty ? vale.concepto : 'Vale / Adelanto',
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                            ),
+                            Text(
+                              _formatoFecha.format(vale.fecha),
+                              style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        _cop.format(vale.monto),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Colors.amber.shade900,
+                        ),
+                      ),
+                      if (!semanaCerrada) ...[
+                        const SizedBox(width: 4),
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 18, color: Color(0xFF0D47A1)),
+                          tooltip: 'Editar Vale',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _mostrarDialogoEditarPrestamo(context, semanaId, vale),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                          tooltip: 'Eliminar Vale',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _confirmarEliminarPrestamo(context, semanaId, vale),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            )
+          else
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'No hay vales o adelantos registrados para este trabajador en la semana.',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+              ),
+            ),
+        ],
+      ),
     );
+  }
+
+  // =========================================================================
+  // SECCIÓN EXPANDIBLE DE BONIFICACIONES / INCENTIVOS POR TRABAJADOR
+  // =========================================================================
+  Widget _construirSeccionBonosTrabajador({
+    required BuildContext context,
+    required String semanaId,
+    required bool semanaCerrada,
+    required List<BonoItemModel> bonos,
+    required String trabajadorId,
+    required String trabajadorNombre,
+  }) {
+    if (bonos.isEmpty) return const SizedBox.shrink();
+
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(top: 4, bottom: 4),
+        collapsedIconColor: Colors.purple.shade700,
+        iconColor: Colors.purple.shade900,
+        leading: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: Colors.purple.shade50,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Icon(
+            Icons.card_giftcard,
+            size: 16,
+            color: Colors.purple.shade800,
+          ),
+        ),
+        title: Text(
+          'Bonos e Incentivos (${bonos.length} registrado${bonos.length == 1 ? "" : "s"})',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Colors.purple.shade900,
+          ),
+        ),
+        children: [
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: bonos.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 6),
+            itemBuilder: (ctx, idx) {
+              final bono = bonos[idx];
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.purple.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade100,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.stars, size: 14, color: Colors.purple.shade900),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            bono.concepto.isNotEmpty ? bono.concepto : 'Bono / Incentivo',
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                          ),
+                          Text(
+                            _formatoFecha.format(bono.fechaRegistro),
+                            style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      _cop.format(bono.monto),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Colors.purple.shade900,
+                      ),
+                    ),
+                    if (!semanaCerrada) ...[
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined, size: 18, color: Color(0xFF0D47A1)),
+                        tooltip: 'Editar Bono',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _mostrarDialogoCrearEditarBono(
+                          context: context,
+                          semanaId: semanaId,
+                          trabajadorId: trabajadorId,
+                          trabajadorNombre: trabajadorNombre,
+                          bonoAEditar: bono,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                        tooltip: 'Eliminar Bono',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _confirmarEliminarBono(
+                          context: context,
+                          semanaId: semanaId,
+                          bono: bono,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // =========================================================================
+  // MODAL EDITAR PRÉSTAMO / VALE
+  // =========================================================================
+  void _mostrarDialogoEditarPrestamo(
+    BuildContext context,
+    String semanaId,
+    PrestamoModel prestamo,
+  ) {
+    final formKey = GlobalKey<FormState>();
+    final montoCtrl = TextEditingController(
+      text: prestamo.monto % 1 == 0
+          ? prestamo.monto.toInt().toString()
+          : prestamo.monto.toString(),
+    );
+    final conceptoCtrl = TextEditingController(text: prestamo.concepto);
+    bool guardando = false;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Abonar Pago: ${item.trabajadorNombre}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Saldo pendiente actual: ${_cop.format(item.saldoPendiente)}'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: montoCtrl,
-              keyboardType: TextInputType.number,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Monto a pagar (\$) *',
-                border: OutlineInputBorder(),
-                prefixText: '\$ ',
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(Icons.edit_note, color: Colors.amber.shade900, size: 26),
+              const SizedBox(width: 8),
+              const Expanded(child: Text('Editar Vale / Préstamo')),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Beneficiario: ${prestamo.trabajadorNombre}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: montoCtrl,
+                    keyboardType: TextInputType.number,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Monto del Vale (\$) *',
+                      border: OutlineInputBorder(),
+                      prefixText: '\$ ',
+                    ),
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) return 'Ingresa el monto';
+                      final num? m = num.tryParse(val.replaceAll(RegExp(r'[^0-9]'), ''));
+                      if (m == null || m <= 0) return 'Monto inválido';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: conceptoCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Concepto / Motivo *',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (val) =>
+                        val == null || val.trim().isEmpty ? 'Ingresa el concepto' : null,
+                  ),
+                ],
               ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade900),
+              onPressed: guardando
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+                      setModalState(() => guardando = true);
+                      try {
+                        final nuevoMonto = double.parse(
+                          montoCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''),
+                        );
+                        await _firestoreService.editarPrestamo(
+                          semanaId: semanaId,
+                          prestamoId: prestamo.id,
+                          nuevoMonto: nuevoMonto,
+                          nuevoConcepto: conceptoCtrl.text.trim(),
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Vale de ${prestamo.trabajadorNombre} actualizado a ${_cop.format(nuevoMonto)}.',
+                              ),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        setModalState(() => guardando = false);
+                      }
+                    },
+              child: guardando
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                    )
+                  : const Text('Guardar Cambios', style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // =========================================================================
+  // CONFIRMAR ELIMINACIÓN DE PRÉSTAMO / VALE
+  // =========================================================================
+  void _confirmarEliminarPrestamo(
+    BuildContext context,
+    String semanaId,
+    PrestamoModel prestamo,
+  ) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+            SizedBox(width: 8),
+            Text('Confirmar Eliminación'),
+          ],
+        ),
+        content: Text(
+          '¿Deseas eliminar el vale de ${_cop.format(prestamo.monto)} registrado por "${prestamo.concepto}" a ${prestamo.trabajadorNombre}?\n\n'
+          'El saldo a pagar del trabajador y los gastos se recalcularán automáticamente.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
-            style:
-                ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0D47A1)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () async {
-              final monto = double.tryParse(
-                  montoCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''));
-              if (monto != null && monto > 0) {
-                await _firestoreService.registrarAbonoPago(
+              Navigator.pop(dialogCtx);
+              try {
+                await _firestoreService.eliminarPrestamo(
                   semanaId: semanaId,
-                  trabajadorId: item.trabajadorId,
-                  montoAbono: monto,
+                  prestamoId: prestamo.id,
                 );
-                if (ctx.mounted) Navigator.pop(ctx);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                          'Pago de ${_cop.format(monto)} abonado y sincronizado.'),
-                      backgroundColor: Colors.green,
+                        'Vale de ${_cop.format(prestamo.monto)} eliminado y saldo recalculado.',
+                      ),
+                      backgroundColor: Colors.orange.shade800,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error al eliminar vale: $e'),
+                      backgroundColor: Colors.red,
                     ),
                   );
                 }
               }
             },
-            child: const Text('Registrar Pago', style: TextStyle(color: Colors.white)),
+            child: const Text('Eliminar Vale'),
           ),
         ],
       ),
+    );
+  }
+
+  // =========================================================================
+  // GESTIÓN DE BONIFICACIONES E INCENTIVOS DISCRIMINADOS
+  // =========================================================================
+  void _mostrarModalGestionBonos({
+    required BuildContext context,
+    required String semanaId,
+    required String trabajadorId,
+    required String trabajadorNombre,
+    required bool semanaCerrada,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (bottomSheetCtx) {
+        return Consumer<ProyectoProvider>(
+          builder: (context, proyecto, _) {
+            final semana = proyecto.semanas.firstWhere(
+              (s) => s.id == semanaId,
+              orElse: () => proyecto.semanaActiva ?? SemanaModel(
+                id: '',
+                numeroSemana: '',
+                fechaInicio: DateTime.now(),
+                fechaFin: DateTime.now(),
+                cerrada: false,
+                registros: [],
+              ),
+            );
+
+            // Obtener bonos del trabajador desde registros o semana
+            final registro = semana.registros.where((r) => r.trabajadorId == trabajadorId).firstOrNull;
+            final List<BonoItemModel> bonos = registro?.bonos.isNotEmpty == true
+                ? registro!.bonos
+                : semana.bonos.where((b) => b.trabajadorId == trabajadorId).toList();
+
+            final totalBonos = bonos.isNotEmpty
+                ? bonos.fold<double>(0.0, (acc, b) => acc + b.monto)
+                : (registro?.bonificaciones ?? 0.0);
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.75,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  // ENCABEZADO
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.shade50,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                      border: Border(bottom: BorderSide(color: Colors.purple.shade100)),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: Colors.purple.shade100,
+                          child: Icon(Icons.card_giftcard, color: Colors.purple.shade800),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'BONIFICACIONES E INCENTIVOS',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.purple,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              Text(
+                                trabajadorNombre,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E293B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(bottomSheetCtx),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // AVISO DE REGLA DE NEGOCIO (OBLIGACIÓN / DEVENGADO)
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline, size: 18, color: Colors.blue.shade800),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Este registro representa la generación de la obligación/incentivo (incrementa el total devengado en nómina), NO un pago en efectivo directo. Se liquida formalmente en el pago de nómina o mediante abonos.',
+                            style: TextStyle(fontSize: 11, color: Colors.blue.shade900, height: 1.3),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // RESUMEN ACUMULADO
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '${bonos.length} bono${bonos.length == 1 ? '' : 's'} discriminado${bonos.length == 1 ? '' : 's'}',
+                          style: TextStyle(fontSize: 13, color: Colors.grey.shade600, fontWeight: FontWeight.w600),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.purple.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.purple.shade200),
+                          ),
+                          child: Text(
+                            'Total: ${_cop.format(totalBonos)}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.purple.shade800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+
+                  // LISTA DISCRIMINADA DE BONOS
+                  Expanded(
+                    child: bonos.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.card_giftcard, size: 48, color: Colors.grey.shade300),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'No hay bonos registrados para este trabajador.',
+                                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                                ),
+                                if (totalBonos > 0) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Existe un saldo legacy no discriminado de ${_cop.format(totalBonos)}',
+                                    style: TextStyle(fontSize: 12, color: Colors.purple.shade700),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: bonos.length,
+                            separatorBuilder: (context, index) => const SizedBox(height: 8),
+                            itemBuilder: (context, idx) {
+                              final bono = bonos[idx];
+                              return Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.shade50.withValues(alpha: 0.3),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: Colors.purple.shade100),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.purple.shade100,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(Icons.stars, size: 18, color: Colors.purple.shade800),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            bono.concepto,
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            _formatoFecha.format(bono.fechaRegistro),
+                                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Text(
+                                      _cop.format(bono.monto),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: Colors.purple.shade800,
+                                      ),
+                                    ),
+                                    if (!semanaCerrada) ...[
+                                      const SizedBox(width: 6),
+                                      IconButton(
+                                        icon: const Icon(Icons.edit_outlined, size: 18, color: Color(0xFF0D47A1)),
+                                        tooltip: 'Editar Bono',
+                                        visualDensity: VisualDensity.compact,
+                                        onPressed: () => _mostrarDialogoCrearEditarBono(
+                                          context: context,
+                                          semanaId: semanaId,
+                                          trabajadorId: trabajadorId,
+                                          trabajadorNombre: trabajadorNombre,
+                                          bonoAEditar: bono,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                                        tooltip: 'Eliminar Bono',
+                                        visualDensity: VisualDensity.compact,
+                                        onPressed: () => _confirmarEliminarBono(
+                                          context: context,
+                                          semanaId: semanaId,
+                                          bono: bono,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+
+                  // BOTÓN GENERAR NUEVO BONO
+                  if (!semanaCerrada)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.purple.shade700,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          icon: const Icon(Icons.add_circle_outline, size: 20),
+                          label: const Text(
+                            'Generar Nuevo Bono / Incentivo',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          ),
+                          onPressed: () => _mostrarDialogoCrearEditarBono(
+                            context: context,
+                            semanaId: semanaId,
+                            trabajadorId: trabajadorId,
+                            trabajadorNombre: trabajadorNombre,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _mostrarDialogoCrearEditarBono({
+    required BuildContext context,
+    required String semanaId,
+    required String trabajadorId,
+    required String trabajadorNombre,
+    BonoItemModel? bonoAEditar,
+  }) {
+    final montoCtrl = TextEditingController(
+      text: bonoAEditar != null ? bonoAEditar.monto.toInt().toString() : '',
+    );
+    final conceptoCtrl = TextEditingController(
+      text: bonoAEditar != null ? bonoAEditar.concepto : '',
+    );
+    DateTime fechaBono = bonoAEditar != null ? bonoAEditar.fechaRegistro : DateTime.now();
+
+    final sugerencias = [
+      'Rendimiento extra en obra',
+      'Apoyo fin de semana',
+      'Calidad en empalmes y montajes',
+      'Cumplimiento de meta semanal',
+      'Puntualidad y compromiso',
+    ];
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.card_giftcard, color: Colors.purple.shade700, size: 24),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  bonoAEditar != null ? 'Editar Bono' : 'Generar Nuevo Bono',
+                  style: const TextStyle(fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Beneficiario: $trabajadorNombre',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: montoCtrl,
+                  keyboardType: TextInputType.number,
+                  autofocus: bonoAEditar == null,
+                  decoration: const InputDecoration(
+                    labelText: 'Monto del Bono (\$)',
+                    prefixText: '\$ ',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: conceptoCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Concepto o Motivo del Bono',
+                    border: OutlineInputBorder(),
+                    hintText: 'Ej. Rendimiento extra en Lote 2',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text('Sugerencias rápidas:', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: sugerencias.map((sug) {
+                    return ActionChip(
+                      label: Text(sug, style: const TextStyle(fontSize: 10)),
+                      padding: EdgeInsets.zero,
+                      onPressed: () => setDialogState(() => conceptoCtrl.text = sug),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 12),
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: fechaBono,
+                      firstDate: DateTime(2025, 1, 1),
+                      lastDate: DateTime(2030, 12, 31),
+                    );
+                    if (picked != null) {
+                      setDialogState(() => fechaBono = picked);
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade400),
+                      borderRadius: BorderRadius.circular(6),
+                      color: Colors.grey.shade50,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.calendar_today, size: 16, color: Colors.purple),
+                            const SizedBox(width: 8),
+                            Text('Fecha: ${_formatoFecha.format(fechaBono)}', style: const TextStyle(fontSize: 12)),
+                          ],
+                        ),
+                        const Icon(Icons.edit, size: 14, color: Colors.grey),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.purple.shade700),
+              onPressed: () async {
+                final monto = double.tryParse(montoCtrl.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0.0;
+                if (monto <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Por favor ingresa un monto válido mayor a 0.')),
+                  );
+                  return;
+                }
+                final concepto = conceptoCtrl.text.trim().isNotEmpty
+                    ? conceptoCtrl.text.trim()
+                    : 'Incentivo / Bonificación Especial';
+
+                if (bonoAEditar != null) {
+                  final bonoModificado = bonoAEditar.copyWith(
+                    monto: monto,
+                    concepto: concepto,
+                    fechaRegistro: fechaBono,
+                  );
+                  await _firestoreService.editarBonoTrabajador(
+                    semanaId: semanaId,
+                    bonoModificado: bonoModificado,
+                  );
+                } else {
+                  final nuevoBono = BonoItemModel(
+                    id: '',
+                    trabajadorId: trabajadorId,
+                    trabajadorNombre: trabajadorNombre,
+                    monto: monto,
+                    concepto: concepto,
+                    fechaRegistro: fechaBono,
+                    semanaId: semanaId,
+                  );
+                  await _firestoreService.registrarBonoTrabajador(
+                    semanaId: semanaId,
+                    bono: nuevoBono,
+                  );
+                }
+
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        bonoAEditar != null
+                            ? 'Bono actualizado correctamente.'
+                            : 'Bono de ${_cop.format(monto)} generado a $trabajadorNombre.',
+                      ),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Guardar Bono', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmarEliminarBono({
+    required BuildContext context,
+    required String semanaId,
+    required BonoItemModel bono,
+  }) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar Bono'),
+        content: Text(
+          '¿Estás seguro de que deseas eliminar el bono de ${_cop.format(bono.monto)} (${bono.concepto})?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _firestoreService.eliminarBonoTrabajador(
+                semanaId: semanaId,
+                bonoId: bono.id,
+                trabajadorId: bono.trabajadorId,
+              );
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Bono eliminado.'), backgroundColor: Colors.orange),
+                );
+              }
+            },
+            child: const Text('Eliminar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // =========================================================================
+  // EDICIÓN Y ELIMINACIÓN DE SEMANAS
+  // =========================================================================
+  void _mostrarDialogoEditarSemana(
+    BuildContext context,
+    ProyectoProvider proyecto,
+    SemanaModel semana,
+  ) {
+    int numSemana = 1;
+    final match = RegExp(r'\d+').firstMatch(semana.numeroSemana);
+    if (match != null) {
+      numSemana = int.tryParse(match.group(0) ?? '1') ?? 1;
+    }
+
+    final numeroCtrl = TextEditingController(text: numSemana.toString());
+    final nombreCtrl = TextEditingController(text: semana.numeroSemana);
+    DateTime fechaInicio = semana.fechaInicio;
+    DateTime fechaFin = semana.fechaFin;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.edit_calendar_outlined, color: Color(0xFF0D47A1)),
+              SizedBox(width: 8),
+              Expanded(child: Text('Editar Semana de Nómina', style: TextStyle(fontSize: 16))),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Corrige las fechas de inicio, fin y el identificador de la semana.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: numeroCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Número de Semana',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.tag),
+                  ),
+                  onChanged: (val) {
+                    final n = int.tryParse(val) ?? numSemana;
+                    setDialogState(() {
+                      numSemana = n;
+                      nombreCtrl.text =
+                          'Semana $n - ${DateFormat('MMMM yyyy', 'es').format(fechaInicio)}';
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nombreCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Identificador / Título de la Semana',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.label_outline),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Rango de Fechas:',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                InkWell(
+                  onTap: () async {
+                    final rango = await showDateRangePicker(
+                      context: context,
+                      firstDate: DateTime(2024, 1, 1),
+                      lastDate: DateTime(2030, 12, 31),
+                      initialDateRange: DateTimeRange(start: fechaInicio, end: fechaFin),
+                    );
+                    if (rango != null) {
+                      setDialogState(() {
+                        fechaInicio = rango.start;
+                        fechaFin = rango.end;
+                        nombreCtrl.text =
+                            'Semana $numSemana - ${DateFormat('MMMM yyyy', 'es').format(fechaInicio)}';
+                      });
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade400),
+                      borderRadius: BorderRadius.circular(6),
+                      color: Colors.grey.shade50,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.date_range, color: Color(0xFF0D47A1), size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${_formatoFecha.format(fechaInicio)} — ${_formatoFecha.format(fechaFin)}',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                        const Icon(Icons.edit, size: 16, color: Colors.grey),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0D47A1)),
+              onPressed: () async {
+                final n = int.tryParse(numeroCtrl.text.trim()) ?? numSemana;
+                await _firestoreService.editarSemana(
+                  semanaId: semana.id,
+                  nuevaFechaInicio: fechaInicio,
+                  nuevaFechaFin: fechaFin,
+                  nuevoNumero: n,
+                  nuevoNombre: nombreCtrl.text.trim(),
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Semana modificada con éxito.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Guardar Cambios', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmarEliminarSemana(
+    BuildContext context,
+    ProyectoProvider proyecto,
+    SemanaModel semana,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) => PinModalWidget(
+        titulo: 'Eliminar Semana con PIN',
+        mensaje:
+            'Ingresa el PIN de seguridad de 4 dígitos para autorizar la eliminación definitiva de "${semana.numeroSemana}":',
+        onPinConfirmado: (pinIngresado) async {
+          if (pinIngresado != proyecto.configuracion.pinSeguridad) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('PIN de seguridad incorrecto.'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
+
+          // Consultar datos vinculados
+          final vinculos = await _firestoreService.contarVinculosSemana(semana.id);
+          final int totalVinculos = vinculos['total'] ?? 0;
+
+          if (!context.mounted) return;
+
+          showDialog(
+            context: context,
+            builder: (confirmCtx) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.red),
+                  SizedBox(width: 8),
+                  Text('Confirmar Eliminación'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '¿Estás seguro de que deseas eliminar permanentemente la "${semana.numeroSemana}"?',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 10),
+                  if (totalVinculos > 0) ...[
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Esta semana tiene registros vinculados:',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.orange),
+                          ),
+                          const SizedBox(height: 4),
+                          Text('• ${vinculos['viviendas']} viviendas selladas', style: const TextStyle(fontSize: 12)),
+                          Text('• ${vinculos['asistencias']} asistencias de ayudantes', style: const TextStyle(fontSize: 12)),
+                          Text('• ${vinculos['gastos']} gastos/abonos registrados', style: const TextStyle(fontSize: 12)),
+                          Text('• ${vinculos['prestamos']} vales/adelantos', style: const TextStyle(fontSize: 12)),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Al proceder, las viviendas serán desvinculadas automáticamente (quedarán disponibles para otra semana) y los datos huérfanos se limpiarán.',
+                            style: TextStyle(fontSize: 11, color: Colors.brown),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    const Text(
+                      'Esta semana está vacía y no tiene registros vinculados. La eliminación es segura.',
+                      style: TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(confirmCtx),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  onPressed: () async {
+                    Navigator.pop(confirmCtx);
+                    try {
+                      await _firestoreService.eliminarSemana(semana.id, desvincularAsociados: true);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Semana "${semana.numeroSemana}" eliminada con éxito.'),
+                            backgroundColor: Colors.green.shade700,
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error al eliminar la semana: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  child: const Text('Eliminar Definitivamente', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // =========================================================================
+  // MODAL ABONAR PAGO
+  // =========================================================================
+  void _mostrarDialogoAbonarPago(
+      BuildContext context, String semanaId, RegistroNominaItem item,
+      {SemanaModel? semana}) {
+    final montoCtrl = TextEditingController(
+      text: item.saldoPendiente > 0 ? item.saldoPendiente.toInt().toString() : '',
+    );
+    final conceptoCtrl = TextEditingController(text: 'Abono de nómina');
+    String metodoPago = 'Efectivo';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setStateModal) => AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.attach_money, color: Color(0xFF0D47A1)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Abonar Pago: ${item.trabajadorNombre}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Saldo pendiente actual:', style: TextStyle(fontSize: 12)),
+                      Text(
+                        _cop.format(item.saldoPendiente),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF0D47A1),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: montoCtrl,
+                  keyboardType: TextInputType.number,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Monto a pagar (\$) *',
+                    border: OutlineInputBorder(),
+                    prefixText: '\$ ',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: conceptoCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Observación / Justificación',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: metodoPago,
+                  decoration: const InputDecoration(
+                    labelText: 'Método de Pago',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'Efectivo', child: Text('Efectivo')),
+                    DropdownMenuItem(value: 'Nequi / Daviplata', child: Text('Nequi / Daviplata')),
+                    DropdownMenuItem(value: 'Bancolombia', child: Text('Bancolombia')),
+                    DropdownMenuItem(value: 'Transferencia', child: Text('Transferencia')),
+                    DropdownMenuItem(value: 'Otro', child: Text('Otro')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setStateModal(() => metodoPago = val);
+                  },
+                ),
+                if (semana != null && (item.pagos.isNotEmpty || item.totalPagado > 0)) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                      icon: const Icon(Icons.history, size: 16, color: Colors.green),
+                      label: Text(
+                        'Ver historial de abonos (${item.pagos.isNotEmpty ? item.pagos.length : 1})',
+                        style: const TextStyle(fontSize: 11, color: Colors.green),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _mostrarModalHistorialAbonos(context, semana, item);
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0D47A1)),
+              onPressed: () async {
+                final monto = double.tryParse(montoCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''));
+                if (monto != null && monto > 0) {
+                  await _firestoreService.registrarAbonoTrabajador(
+                    semanaId: semanaId,
+                    trabajadorId: item.trabajadorId,
+                    monto: monto,
+                    concepto: conceptoCtrl.text.trim().isNotEmpty ? conceptoCtrl.text.trim() : null,
+                    metodoPago: metodoPago,
+                  );
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            'Pago de ${_cop.format(monto)} registrado y saldo actualizado.'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Registrar Pago', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // =========================================================================
+  // HISTORIAL Y GESTIÓN DE ABONOS / PAGOS PARCIALES
+  // =========================================================================
+  void _mostrarModalHistorialAbonos(
+    BuildContext context,
+    SemanaModel semana,
+    RegistroNominaItem item,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Consumer<ProyectoProvider>(
+          builder: (ctxConsumer, prov, _) {
+            final semFresco =
+                prov.semanas.firstWhere((s) => s.id == semana.id, orElse: () => semana);
+            final itemFresco = semFresco.registros.firstWhere(
+              (r) => r.trabajadorId == item.trabajadorId,
+              orElse: () => item,
+            );
+
+            final List<PagoItemModel> abonos = itemFresco.pagos.isNotEmpty
+                ? itemFresco.pagos
+                : (itemFresco.totalPagado > 0
+                    ? [
+                        PagoItemModel(
+                          id: 'legacy_${itemFresco.trabajadorId}',
+                          trabajadorId: itemFresco.trabajadorId,
+                          trabajadorNombre: itemFresco.trabajadorNombre,
+                          monto: itemFresco.totalPagado,
+                          fecha: semFresco.fechaInicio,
+                          observacion: 'Abono acumulado previo',
+                          metodoPago: 'Efectivo',
+                          semanaId: semFresco.id,
+                        )
+                      ]
+                    : []);
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.7,
+              minChildSize: 0.4,
+              maxChildSize: 0.95,
+              expand: false,
+              builder: (ctxScroll, scrollController) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Row(
+                                  children: [
+                                    Icon(Icons.history, color: Color(0xFF0D47A1), size: 20),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Historial de Abonos / Pagos',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  itemFresco.trabajadorNombre,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey.shade700,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                      const Divider(),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _miniMetricaModal(
+                                'Devengado', _cop.format(itemFresco.totalGenerado), Colors.black87),
+                            _miniMetricaModal(
+                                'Total Pagado', _cop.format(itemFresco.totalPagado), Colors.green.shade800),
+                            _miniMetricaModal(
+                              'Saldo Pendiente',
+                              _cop.format(itemFresco.saldoPendiente),
+                              itemFresco.saldoPendiente > 0
+                                  ? const Color(0xFF0D47A1)
+                                  : Colors.green.shade700,
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (semFresco.cerrada) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.amber.shade300),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.lock_outline, size: 16, color: Colors.amber),
+                              SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Semana cerrada. Se solicitará PIN de seguridad para editar o eliminar abonos.',
+                                  style: TextStyle(fontSize: 11, color: Colors.brown),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      Expanded(
+                        child: abonos.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.receipt_outlined, size: 48, color: Colors.grey.shade400),
+                                    const SizedBox(height: 8),
+                                    const Text('No hay abonos registrados para este trabajador.'),
+                                  ],
+                                ),
+                              )
+                            : ListView.builder(
+                                controller: scrollController,
+                                itemCount: abonos.length,
+                                itemBuilder: (ctxList, idx) {
+                                  final abono = abonos[idx];
+                                  return Card(
+                                    margin: const EdgeInsets.symmetric(vertical: 4),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      side: BorderSide(color: Colors.grey.shade200),
+                                    ),
+                                    child: ListTile(
+                                      leading: CircleAvatar(
+                                        backgroundColor: Colors.green.shade50,
+                                        child: Text(
+                                          '#${idx + 1}',
+                                          style: TextStyle(
+                                            color: Colors.green.shade800,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                      title: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            _cop.format(abono.monto),
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15,
+                                              color: Colors.green.shade900,
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue.shade50,
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              abono.metodoPago,
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.blue.shade900,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      subtitle: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            abono.observacion.isNotEmpty
+                                                ? abono.observacion
+                                                : 'Abono / Pago parcial',
+                                            style: const TextStyle(fontSize: 12),
+                                          ),
+                                          Text(
+                                            _formatoFechaHora.format(abono.fecha),
+                                            style: TextStyle(
+                                                fontSize: 10, color: Colors.grey.shade600),
+                                          ),
+                                        ],
+                                      ),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.edit_outlined,
+                                                size: 20, color: Color(0xFF0D47A1)),
+                                            tooltip: 'Editar abono',
+                                            onPressed: () async {
+                                              final autorizado =
+                                                  await _validarPermisoModificacion(
+                                                context,
+                                                semFresco,
+                                                prov,
+                                              );
+                                              if (autorizado && context.mounted) {
+                                                _mostrarDialogoEditarAbono(
+                                                  context,
+                                                  semFresco,
+                                                  itemFresco,
+                                                  abono,
+                                                );
+                                              }
+                                            },
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete_outline,
+                                                size: 20, color: Colors.red),
+                                            tooltip: 'Eliminar abono',
+                                            onPressed: () async {
+                                              final autorizado =
+                                                  await _validarPermisoModificacion(
+                                                context,
+                                                semFresco,
+                                                prov,
+                                              );
+                                              if (autorizado && context.mounted) {
+                                                await _confirmarEliminarAbono(
+                                                  context,
+                                                  semFresco,
+                                                  itemFresco,
+                                                  abono,
+                                                );
+                                              }
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0D47A1),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: const Icon(Icons.add_circle_outline, size: 18),
+                          label: const Text('Registrar Nuevo Abono',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          onPressed: semFresco.cerrada
+                              ? null
+                              : () {
+                                  Navigator.pop(ctx);
+                                  _mostrarDialogoAbonarPago(
+                                      context, semFresco.id, itemFresco,
+                                      semana: semFresco);
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _mostrarDialogoEditarAbono(
+    BuildContext context,
+    SemanaModel semana,
+    RegistroNominaItem item,
+    PagoItemModel abono,
+  ) {
+    final montoCtrl = TextEditingController(text: abono.monto.toInt().toString());
+    final conceptoCtrl = TextEditingController(text: abono.observacion);
+    String metodo = abono.metodoPago;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setStateModal) => AlertDialog(
+          title: Text('Editar Abono: ${item.trabajadorNombre}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: montoCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Monto corregido (\$) *',
+                    border: OutlineInputBorder(),
+                    prefixText: '\$ ',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: conceptoCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Concepto / Observación',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: metodo,
+                  decoration: const InputDecoration(
+                    labelText: 'Método de Pago',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'Efectivo', child: Text('Efectivo')),
+                    DropdownMenuItem(value: 'Nequi / Daviplata', child: Text('Nequi / Daviplata')),
+                    DropdownMenuItem(value: 'Bancolombia', child: Text('Bancolombia')),
+                    DropdownMenuItem(value: 'Transferencia', child: Text('Transferencia')),
+                    DropdownMenuItem(value: 'Otro', child: Text('Otro')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setStateModal(() => metodo = val);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0D47A1)),
+              onPressed: () async {
+                final nuevoMonto =
+                    double.tryParse(montoCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''));
+                if (nuevoMonto != null && nuevoMonto > 0) {
+                  await _firestoreService.editarAbonoTrabajador(
+                    semanaId: semana.id,
+                    abonoId: abono.id,
+                    trabajadorId: item.trabajadorId,
+                    nuevoMonto: nuevoMonto,
+                    nuevoConcepto:
+                        conceptoCtrl.text.trim().isNotEmpty ? conceptoCtrl.text.trim() : null,
+                  );
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            'Abono corregido a ${_cop.format(nuevoMonto)}. Saldo recalculado.'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Guardar Cambios', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmarEliminarAbono(
+    BuildContext context,
+    SemanaModel semana,
+    RegistroNominaItem item,
+    PagoItemModel abono,
+  ) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar Abono'),
+        content: Text(
+          '¿Estás seguro de eliminar este abono de ${_cop.format(abono.monto)} realizado a ${item.trabajadorNombre}?\n\nEl saldo pendiente se recalculará inmediatamente.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(
+            style:
+                ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar == true) {
+      await _firestoreService.eliminarAbonoTrabajador(
+        semanaId: semana.id,
+        abonoId: abono.id,
+        trabajadorId: item.trabajadorId,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Abono de ${_cop.format(abono.monto)} eliminado y saldo actualizado.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<bool> _validarPermisoModificacion(
+    BuildContext context,
+    SemanaModel semana,
+    ProyectoProvider proyecto,
+  ) async {
+    if (!semana.cerrada) return true;
+
+    final pinValido = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PinModalWidget(
+        onPinConfirmado: (pinIngresado) async {
+          final ok = pinIngresado == proyecto.configuracion.pinSeguridad;
+          Navigator.pop(ctx, ok);
+          if (!ok && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('PIN de seguridad incorrecto. Operación bloqueada.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        },
+      ),
+    );
+    return pinValido ?? false;
+  }
+
+  Widget _miniMetricaModal(String label, String valor, Color color) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+        const SizedBox(height: 2),
+        Text(valor, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color)),
+      ],
     );
   }
 
@@ -2071,7 +4320,10 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
   // =========================================================================
   void _mostrarDialogoEditarNumeroManual(
       BuildContext context, String semanaId, RegistroNominaItem item, bool esAyudante) {
-    final numCtrl = TextEditingController(text: item.diasOcasas.toString());
+    final diasStr = item.diasOcasas % 1 == 0
+        ? item.diasOcasas.toInt().toString()
+        : item.diasOcasas.toString();
+    final numCtrl = TextEditingController(text: diasStr);
 
     showDialog(
       context: context,
@@ -2085,10 +4337,10 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
             const SizedBox(height: 12),
             TextField(
               controller: numCtrl,
-              keyboardType: TextInputType.number,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               autofocus: true,
               decoration: InputDecoration(
-                labelText: esAyudante ? 'Número de Días' : 'Número de Casas',
+                labelText: esAyudante ? 'Número de Días (ej: 3.5)' : 'Número de Casas',
                 border: const OutlineInputBorder(),
               ),
             ),
@@ -2099,7 +4351,7 @@ class _NominaScreenState extends State<NominaScreen> with SingleTickerProviderSt
               onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
           ElevatedButton(
             onPressed: () async {
-              final valor = int.tryParse(numCtrl.text.trim());
+              final valor = double.tryParse(numCtrl.text.trim().replaceAll(',', '.'));
               if (valor != null && valor >= 0) {
                 await _firestoreService.actualizarDiasObrasManual(
                   semanaId: semanaId,

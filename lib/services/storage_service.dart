@@ -62,4 +62,39 @@ class StorageService {
 
     return urlsDescarga;
   }
+
+  /// Sube el logo institucional de la empresa a Firebase Storage en la ruta
+  /// `configuracion/logo_empresa.{ext}` y retorna su URL de descarga pública.
+  Future<String> subirLogoEmpresa(Uint8List bytes, String extension) async {
+    try {
+      final cleanExt = extension.replaceAll('.', '').toLowerCase().trim();
+      String contentType = 'image/jpeg';
+      if (cleanExt == 'png') {
+        contentType = 'image/png';
+      } else if (cleanExt == 'webp') {
+        contentType = 'image/webp';
+      } else if (cleanExt == 'svg') {
+        contentType = 'image/svg+xml';
+      } else if (cleanExt == 'gif') {
+        contentType = 'image/gif';
+      }
+
+      final String nombreArchivo = 'logo_empresa.$cleanExt';
+      final Reference ref = _storage.ref().child('configuracion').child(nombreArchivo);
+
+      final TaskSnapshot snapshot = await ref.putData(
+        bytes,
+        SettableMetadata(
+          contentType: contentType,
+          cacheControl: 'no-cache, max-age=0',
+        ),
+      );
+
+      final String url = await snapshot.ref.getDownloadURL();
+      return url;
+    } catch (e) {
+      debugPrint('[StorageService] Error al subir logo de empresa: $e');
+      rethrow;
+    }
+  }
 }

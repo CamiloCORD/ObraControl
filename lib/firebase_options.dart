@@ -23,15 +23,20 @@ class DefaultFirebaseOptions {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        return ios;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for iOS.',
+        );
       case TargetPlatform.macOS:
-        return macos;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for macOS.',
+        );
       case TargetPlatform.windows:
-        return windows;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for Windows.',
+        );
       case TargetPlatform.linux:
         throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
+          'DefaultFirebaseOptions have not been configured for linux.',
         );
       default:
         throw UnsupportedError(
@@ -41,46 +46,20 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyDhu-ilemmgQ4Ec_eHzK17RFWlNRRs4JTI',
-    appId: '1:202554915691:web:0f3c05371ae134551fea2e',
-    messagingSenderId: '202554915691',
-    projectId: 'control-gas-natural',
-    authDomain: 'control-gas-natural.firebaseapp.com',
-    storageBucket: 'control-gas-natural.firebasestorage.app',
+    apiKey: 'AIzaSyCKHoo0QMZDQFZgFS_TnDjEJPgusQA0xJA',
+    appId: '1:637695930390:web:551ffbbf26b91f242d4537',
+    messagingSenderId: '637695930390',
+    projectId: 'obracontrol-f5bdf',
+    authDomain: 'obracontrol-f5bdf.firebaseapp.com',
+    storageBucket: 'obracontrol-f5bdf.firebasestorage.app',
+    measurementId: 'G-90QSYZSQ1X',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAQDmHPdebu3Jxpasz6EMeMTrfzAZ0GFRI',
-    appId: '1:202554915691:android:df769490e07abd421fea2e',
-    messagingSenderId: '202554915691',
-    projectId: 'control-gas-natural',
-    storageBucket: 'control-gas-natural.firebasestorage.app',
-  );
-
-  static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyADwOxH-NmfjR3hQs2liUyHZsyl74T5IhM',
-    appId: '1:202554915691:ios:321d95b028b6a3891fea2e',
-    messagingSenderId: '202554915691',
-    projectId: 'control-gas-natural',
-    storageBucket: 'control-gas-natural.firebasestorage.app',
-    iosBundleId: 'com.controlgas.app.controlGasApp',
-  );
-
-  static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyADwOxH-NmfjR3hQs2liUyHZsyl74T5IhM',
-    appId: '1:202554915691:ios:321d95b028b6a3891fea2e',
-    messagingSenderId: '202554915691',
-    projectId: 'control-gas-natural',
-    storageBucket: 'control-gas-natural.firebasestorage.app',
-    iosBundleId: 'com.controlgas.app.controlGasApp',
-  );
-
-  static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyDhu-ilemmgQ4Ec_eHzK17RFWlNRRs4JTI',
-    appId: '1:202554915691:web:02d7422fe6187ea51fea2e',
-    messagingSenderId: '202554915691',
-    projectId: 'control-gas-natural',
-    authDomain: 'control-gas-natural.firebaseapp.com',
-    storageBucket: 'control-gas-natural.firebasestorage.app',
+    apiKey: 'AIzaSyDo9oK7wbuKIqifuZOawrhZJ-2WUXTYjmY',
+    appId: '1:637695930390:android:f9513e46256739e02d4537',
+    messagingSenderId: '637695930390',
+    projectId: 'obracontrol-f5bdf',
+    storageBucket: 'obracontrol-f5bdf.firebasestorage.app',
   );
 }

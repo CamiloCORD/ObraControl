@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Funciones auxiliares de autenticación y control de acceso (RBAC)
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function userDocExists() {
+      return exists(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    }
+
+    function isDueno() {
+      return isAuthenticated() && userDocExists() && getUserData().rol == 'dueno';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && userDocExists() && getUserData().rol == 'admin';
+    }
+
+    function isAuthorizedUser() {
+      return isAuthenticated() && (isDueno() || isAdmin());
+    }
+
+    // Colección de Usuarios y Perfiles
+    match /usuarios/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAuthorizedUser());
+      allow create: if isAuthenticated() && (request.auth.uid == userId || isDueno());
+      allow update: if isAuthenticated() && (isDueno() || (request.auth.uid == userId && request.resource.data.rol == resource.data.rol));
+      allow delete: if isDueno();
+    }
+
+    // Configuración general del sistema
+    match /configuracion/{docId} {
+      allow read: if isAuthorizedUser();
+      allow write: if isAuthorizedUser();
+    }
+
+    // Colecciones de Gestión de Obras
+    match /lotes/{document=**} {
+      allow read, write: if isAuthorizedUser();
+    }
+
+    match /viviendas/{document=**} {
+      allow read, write: if isAuthorizedUser();
+    }
+
+    match /etapas/{document=**} {
+      allow read, write: if isAuthorizedUser();
+    }
+
+    match /semanas/{document=**} {
+      allow read, write: if isAuthorizedUser();
+    }
+
+    match /trabajadores/{document=**} {
+      allow read, write: if isAuthorizedUser();
+    }
+
+    match /asistencias/{document=**} {
+      allow read, write: if isAuthorizedUser();
+    }
+
+    match /gastos/{document=**} {
+      allow read, write: if isAuthorizedUser();
+    }
+
+    match /ingresos/{document=**} {
+      allow read, write: if isAuthorizedUser();
+    }
+
+    // Vales y adelantos de nómina a trabajadores
+    match /prestamos/{document=**} {
+      allow read, write: if isAuthorizedUser();
+    }
+
+    // Cuentas por Cobrar (CxC) a terceros, contratistas y pagadores
+    match /prestamos_terceros/{document=**} {
+      allow read, write: if isAuthorizedUser();
+    }
+  }
+}

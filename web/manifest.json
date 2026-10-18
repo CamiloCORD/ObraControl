@@ -1,11 +1,11 @@
 {
-    "name": "control_gas_app",
-    "short_name": "control_gas_app",
+    "name": "ObraControl",
+    "short_name": "ObraControl",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#ffffff",
     "theme_color": "#0500D0",
-    "description": "A new Flutter project.",
+    "description": "ObraControl - Plataforma de Gestión Operativa, Control Físico y Liquidación Financiera en Obras.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

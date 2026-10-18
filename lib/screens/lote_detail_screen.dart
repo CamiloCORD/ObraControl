@@ -155,8 +155,11 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
             }
             if (_busqueda.isNotEmpty) {
               final query = _busqueda.toLowerCase();
-              return c.id.toLowerCase().contains(query) ||
-                  c.tecnicoNombre.toLowerCase().contains(query);
+              return c.codigoVisual.toLowerCase().contains(query) ||
+                  c.id.toLowerCase().contains(query) ||
+                  c.tecnicoNombre.toLowerCase().contains(query) ||
+                  c.nombrePropietario.toLowerCase().contains(query) ||
+                  c.propietarioCedula.toLowerCase().contains(query);
             }
             return true;
           }).toList();
@@ -252,7 +255,7 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
                         height: 40,
                         child: TextField(
                           decoration: InputDecoration(
-                            hintText: 'Buscar casa...',
+                            hintText: 'Buscar casa o propietario...',
                             prefixIcon: const Icon(Icons.search, size: 20),
                             suffixIcon: _busqueda.isNotEmpty
                                 ? IconButton(
@@ -327,7 +330,7 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
                         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                           maxCrossAxisExtent: 180,
-                          mainAxisExtent: 145,
+                          mainAxisExtent: 165,
                           crossAxisSpacing: 12,
                           mainAxisSpacing: 12,
                         ),
@@ -426,7 +429,7 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      casa.id,
+                      casa.codigoVisual,
                       style: const TextStyle(
                         fontWeight: FontWeight.w900,
                         fontSize: 16,
@@ -465,6 +468,37 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
                     ),
                   ],
                 ),
+              ),
+              // PROPIETARIO VISIBLE EN TARJETA
+              Row(
+                children: [
+                  Icon(
+                    Icons.account_circle_outlined,
+                    size: 13,
+                    color: casa.nombrePropietario.trim().isNotEmpty
+                        ? const Color(0xFF1E3A8A)
+                        : Colors.grey.shade400,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      casa.nombrePropietario.trim().isNotEmpty
+                          ? casa.nombrePropietario.trim()
+                          : 'Sin propietario',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: casa.nombrePropietario.trim().isNotEmpty
+                            ? const Color(0xFF0F172A)
+                            : Colors.grey.shade500,
+                        fontWeight: casa.nombrePropietario.trim().isNotEmpty
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
               Builder(
                 builder: (context) {
@@ -518,7 +552,7 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
                         : () => FotoLightboxDialog.mostrar(
                               context,
                               fotos: casa.fotos,
-                              casaId: casa.id,
+                              casaId: casa.codigoVisual,
                             ),
                     borderRadius: BorderRadius.circular(4),
                     child: Padding(
@@ -594,7 +628,7 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Casa ${nueva.id} agregada exitosamente.'),
+            content: Text('Casa ${nueva.codigoVisual} agregada exitosamente.'),
             backgroundColor: Colors.green.shade700,
             duration: const Duration(seconds: 2),
           ),
@@ -627,7 +661,7 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
           ],
         ),
         content: Text(
-          '¿Estás seguro de que deseas eliminar la casa "${casa.id}" del ${widget.lote.nombre}?\n\nEsta acción no se puede deshacer.',
+          '¿Estás seguro de que deseas eliminar la casa "${casa.codigoVisual}" del ${widget.lote.nombre}?\n\nEsta acción no se puede deshacer.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancelar')),
@@ -636,11 +670,16 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
             onPressed: () async {
               Navigator.pop(dialogCtx);
               try {
-                await _firestoreService.eliminarCasa(casa.id, loteId: widget.lote.id);
+                await _firestoreService.eliminarVivienda(
+                  casa.id,
+                  semanaId: casa.semanaId,
+                  tecnicoId: casa.tecnicoId,
+                  loteId: widget.lote.id,
+                );
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Casa ${casa.id} eliminada.'),
+                      content: Text('Casa ${casa.codigoVisual} eliminada.'),
                       backgroundColor: Colors.orange.shade800,
                     ),
                   );
@@ -690,6 +729,7 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
         ? tecnicoAsignado.nombre
         : '';
     final obsController = TextEditingController(text: casa.observaciones);
+    final propietarioController = TextEditingController(text: casa.nombrePropietario);
     final cedulaController = TextEditingController(text: casa.propietarioCedula);
     final telefonoController = TextEditingController(text: casa.propietarioTelefono);
     final direccionController = TextEditingController(text: casa.direccion);
@@ -735,7 +775,7 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
-                                casa.id,
+                                casa.codigoVisual,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
@@ -744,13 +784,27 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
                               ),
                             ),
                             const SizedBox(width: 10),
-                            Text(
-                              widget.lote.nombre,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey.shade600,
-                                fontWeight: FontWeight.w500,
-                              ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  widget.lote.nombre,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                if (casa.nombrePropietario.trim().isNotEmpty)
+                                  Text(
+                                    'Dueño: ${casa.nombrePropietario.trim()}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF1E3A8A),
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                              ],
                             ),
                           ],
                         ),
@@ -911,10 +965,21 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
                     const Text('Datos del Propietario',
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                     const SizedBox(height: 8),
+                    TextFormField(
+                      controller: propietarioController,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: InputDecoration(
+                        labelText: 'Nombre del Propietario / Dueño',
+                        prefixIcon: const Icon(Icons.person_outline, size: 20),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Expanded(
-                          child: TextField(
+                          child: TextFormField(
                             controller: cedulaController,
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
@@ -927,7 +992,7 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: TextField(
+                          child: TextFormField(
                             controller: telefonoController,
                             keyboardType: TextInputType.phone,
                             decoration: InputDecoration(
@@ -940,8 +1005,8 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    TextField(
+                    const SizedBox(height: 8),
+                    TextFormField(
                       controller: direccionController,
                       decoration: InputDecoration(
                         labelText: 'Dirección exacta / Manzana',
@@ -1146,27 +1211,38 @@ class _LoteDetailScreenState extends State<LoteDetailScreen> {
                             : () async {
                                 setModalState(() => guardando = true);
                                 try {
+                                  final esTerminada = estadoSeleccionado == 'Terminada';
+                                  final semanaActivaId = proyecto.semanaActiva?.id ?? '';
+
                                   final casaActualizada = casa.copyWith(
                                     estado: estadoSeleccionado,
                                     tecnicoId: tecnicoSeleccionadoId ?? '',
                                     tecnicoNombre: tecnicoSeleccionadoNombre,
                                     observaciones: obsController.text.trim(),
                                     fotos: fotosActuales,
+                                    nombrePropietario: propietarioController.text.trim(),
                                     propietarioCedula: cedulaController.text.trim(),
                                     propietarioTelefono: telefonoController.text.trim(),
                                     direccion: direccionController.text.trim(),
                                     fechaInstalacion: fechaInstalacion,
-                                    semanaId: estadoSeleccionado == 'Terminada'
-                                        ? (casa.semanaId.isNotEmpty ? casa.semanaId : (proyecto.semanaActiva?.id ?? ''))
-                                        : (estadoSeleccionado != 'Terminada' ? '' : casa.semanaId),
+                                    fechaTerminacion: esTerminada
+                                        ? (casa.fechaTerminacion ?? DateTime.now())
+                                        : null,
+                                    clearFechaTerminacion: !esTerminada,
+                                    semanaId: esTerminada
+                                        ? (casa.semanaId.isNotEmpty ? casa.semanaId : semanaActivaId)
+                                        : '',
                                   );
 
-                                  await _firestoreService.guardarVivienda(casaActualizada);
+                                  await _firestoreService.guardarVivienda(
+                                    casaActualizada,
+                                    semanaActivaId: semanaActivaId,
+                                  );
                                   if (bottomSheetCtx.mounted) Navigator.pop(bottomSheetCtx);
                                   if (mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text('Casa ${casa.id} actualizada correctamente.'),
+                                        content: Text('Casa ${casa.codigoVisual} actualizada correctamente.'),
                                         backgroundColor: Colors.green.shade700,
                                       ),
                                     );

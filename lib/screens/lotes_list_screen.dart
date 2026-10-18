@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/lote_model.dart';
 import '../providers/proyecto_provider.dart';
+import '../services/excel_service.dart';
 import '../services/firestore_service.dart';
 import 'lote_detail_screen.dart';
 
@@ -16,6 +18,7 @@ class LotesListScreen extends StatefulWidget {
 class _LotesListScreenState extends State<LotesListScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
+  bool _importando = false;
 
   @override
   Widget build(BuildContext context) {
@@ -29,6 +32,11 @@ class _LotesListScreenState extends State<LotesListScreen> {
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.upload_file_rounded),
+            tooltip: 'Importar viviendas desde Excel',
+            onPressed: _importando ? null : _importarDesdeExcel,
+          ),
           IconButton(
             icon: const Icon(Icons.add_circle_outline),
             tooltip: 'Crear Nuevo Lote',
@@ -291,6 +299,93 @@ class _LotesListScreenState extends State<LotesListScreen> {
   }
 
   // =========================================================================
+  // IMPORTADOR MASIVO DESDE EXCEL
+  // =========================================================================
+  Future<void> _importarDesdeExcel() async {
+    // 1. Seleccionar archivo .xlsx usando la nueva API estática de file_picker v13
+    final archivos = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['xlsx'],
+    );
+
+    if (archivos.isEmpty) return;
+    final archivo = archivos.first;
+
+    // Obtener bytes en memoria (compatible con Web vía readAsBytes())
+    final bytes = await archivo.readAsBytes();
+    final nombreArchivo = archivo.name;
+
+    // 2. Parsear el Excel en memoria
+    ResultadoLecturaExcel lectura;
+    try {
+      lectura = ExcelService.leerViviendasDesdeExcel(bytes);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al leer el archivo: $e'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    // 3. Mostrar modal de previsualización
+    final confirmar = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => _ModalPreviaImportacion(
+        nombreArchivo: nombreArchivo,
+        lectura: lectura,
+      ),
+    );
+
+    if (confirmar != true || !mounted) return;
+
+    // 4. Ejecutar la importación con barra de progreso
+    setState(() => _importando = true);
+    try {
+      final proyecto = Provider.of<ProyectoProvider>(context, listen: false);
+      final lotesMap = {for (final l in proyecto.lotes) l.id: l};
+
+      final resultado = await _firestoreService.importarViviendasDesdeExcel(
+        filas: lectura.filas,
+        lotesExistentes: lotesMap,
+      );
+
+      if (!mounted) return;
+      final insertadas = resultado['insertadas'] ?? 0;
+      final omitidas = resultado['omitidas'] ?? 0;
+      final lotesCreados = resultado['lotes_creados'] ?? 0;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '✅ Importación completada: $insertadas viviendas insertadas'
+            '${omitidas > 0 ? ', $omitidas omitidas (ya existían o vacías)' : ''}'
+            '${lotesCreados > 0 ? ', $lotesCreados lotes creados automáticamente' : ''}.',
+          ),
+          backgroundColor: const Color(0xFF0500D0),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al importar: $e'),
+          backgroundColor: Colors.red.shade700,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _importando = false);
+    }
+  }
+
+  // =========================================================================
   // DIÁLOGO CREAR LOTE CON CASAS
   // =========================================================================
   void _mostrarDialogoCrearLote(BuildContext context) {
@@ -518,6 +613,245 @@ class _LotesListScreenState extends State<LotesListScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// =============================================================================
+// MODAL DE PREVISUALIZACIÓN DE IMPORTACIÓN EXCEL
+// =============================================================================
+class _ModalPreviaImportacion extends StatelessWidget {
+  final String nombreArchivo;
+  final ResultadoLecturaExcel lectura;
+
+  const _ModalPreviaImportacion({
+    required this.nombreArchivo,
+    required this.lectura,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hayAdvertencias = lectura.filasVacias > 0 ||
+        lectura.codigosRepetidosInterno.isNotEmpty;
+    final puedeImportar = lectura.filas.isNotEmpty;
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      titlePadding: EdgeInsets.zero,
+      title: Container(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+        decoration: const BoxDecoration(
+          color: Color(0xFF0500D0),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.table_view_rounded, color: Colors.white, size: 24),
+                SizedBox(width: 10),
+                Text(
+                  'Previsualización de Importación',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              nombreArchivo,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+      contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // RESUMEN DE FILAS
+            _InfoRow(
+              icono: Icons.home_work_outlined,
+              color: const Color(0xFF0500D0),
+              etiqueta: 'Viviendas listas para importar',
+              valor: '${lectura.filas.length}',
+            ),
+            const SizedBox(height: 8),
+            _InfoRow(
+              icono: Icons.format_list_numbered,
+              color: Colors.blueGrey,
+              etiqueta: 'Total filas detectadas en Excel',
+              valor: '${lectura.totalFilasDetectadas}',
+            ),
+            if (lectura.filasVacias > 0) ...[
+              const SizedBox(height: 8),
+              _InfoRow(
+                icono: Icons.warning_amber_rounded,
+                color: Colors.amber.shade700,
+                etiqueta: 'Filas vacías omitidas',
+                valor: '${lectura.filasVacias}',
+              ),
+            ],
+            if (lectura.codigosRepetidosInterno.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _InfoRow(
+                icono: Icons.copy_all_rounded,
+                color: Colors.orange.shade700,
+                etiqueta: 'Códigos repetidos en el archivo',
+                valor: '${lectura.codigosRepetidosInterno.length}',
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Text(
+                  lectura.codigosRepetidosInterno.take(5).join(', ') +
+                      (lectura.codigosRepetidosInterno.length > 5
+                          ? '... (+${lectura.codigosRepetidosInterno.length - 5} más)'
+                          : ''),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              ),
+            ],
+            if (hayAdvertencias) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.amber.shade800, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Los registros con advertencias serán omitidos. '
+                        'Solo se insertarán las filas válidas y no duplicadas en Firestore.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.amber.shade900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (!puedeImportar) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, color: Colors.red.shade700, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'No se encontraron filas válidas para importar. '
+                        'Verifica el formato del archivo.',
+                        style: TextStyle(fontSize: 12, color: Colors.red.shade800),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF0500D0),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          icon: const Icon(Icons.upload_rounded, size: 18),
+          label: Text(
+            'Importar ${lectura.filas.length} viviendas',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          onPressed: puedeImportar
+              ? () => Navigator.of(context).pop(true)
+              : null,
+        ),
+      ],
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final IconData icono;
+  final Color color;
+  final String etiqueta;
+  final String valor;
+
+  const _InfoRow({
+    required this.icono,
+    required this.color,
+    required this.etiqueta,
+    required this.valor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icono, size: 18, color: color),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            etiqueta,
+            style: const TextStyle(fontSize: 13, color: Color(0xFF334155)),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            valor,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              color: color,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

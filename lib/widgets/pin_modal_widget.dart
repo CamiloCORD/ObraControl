@@ -2,8 +2,15 @@ import 'package:flutter/material.dart';
 
 class PinModalWidget extends StatefulWidget {
   final Function(String pin) onPinConfirmado;
+  final String titulo;
+  final String mensaje;
 
-  const PinModalWidget({super.key, required this.onPinConfirmado});
+  const PinModalWidget({
+    super.key,
+    required this.onPinConfirmado,
+    this.titulo = 'Seguridad del Dueño',
+    this.mensaje = 'Ingresa tu PIN de 4 dígitos para autorizar la acción:',
+  });
 
   @override
   State<PinModalWidget> createState() => _PinModalWidgetState();
@@ -15,17 +22,17 @@ class _PinModalWidgetState extends State<PinModalWidget> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Row(
+      title: Row(
         children: [
-          Icon(Icons.lock, color: Color(0xFF0D47A1)),
-          SizedBox(width: 8),
-          Text('Seguridad del Dueño', style: TextStyle(fontSize: 16)),
+          const Icon(Icons.lock, color: Color(0xFF0D47A1)),
+          const SizedBox(width: 8),
+          Expanded(child: Text(widget.titulo, style: const TextStyle(fontSize: 16))),
         ],
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Ingresa tu PIN de 4 dígitos para autorizar la reapertura de la semana:'),
+          Text(widget.mensaje),
           const SizedBox(height: 12),
           TextField(
             controller: _pinController,

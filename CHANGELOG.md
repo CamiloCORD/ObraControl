@@ -1,149 +1,151 @@
-# 📋 CHANGELOG — Control Gas App
+# 📋 CHANGELOG — ObraControl
 
-Todos los cambios notables, auditorías y correcciones de sincronización en tiempo real están documentados en este archivo.
+Todos los cambios notables, hitos de arquitectura, auditorías y correcciones de sincronización están documentados en este archivo.
 
----
+## [2.2.2] - 2026-10-18 — Despliegue Web en Producción (Firebase Hosting) 🌐🚀
 
-## [1.0.0] - 2026-10-05 — Lanzamiento Oficial a Producción 🚀
-
-### 🌐 Despliegue Web (Firebase Hosting)
-- Compilación final optimizada para Web (`flutter build web --release`).
-- Configuración de `firebase.json` y `.firebaserc` con enrutamiento SPA y hosting apuntando a `build/web`.
-- Despliegue completado a Firebase Hosting en: **https://control-gas-natural.web.app**.
-
-### 📱 Compilación Android (APK Oficial de Producción)
-- Compilación de paquete instalable Android (`flutter build apk --release`).
-- Binario ejecutable generado exitosamente: `build/app/outputs/flutter-apk/app-release.apk` (62.8 MB).
-- Generación y estandarización de iconos corporativos para todas las plataformas (`flutter_launcher_icons`).
+### 🚀 [Deployment] Publicación Web Oficial en Firebase
+- **Compilación de Producción:** Generado el bundle optimizado con `flutter build web --release` en `build/web`.
+- **Despliegue Multi-Recurso (`firebase deploy`):**
+  - Publicada la aplicación en **Firebase Hosting** en la URL oficial: [https://obracontrol-f5bdf.web.app](https://obracontrol-f5bdf.web.app).
+  - Sincronizadas y publicadas las reglas actualizadas de **Cloud Firestore** (`firestore.rules`) con validación de existencia de documento de usuario (`userDocExists`) y soporte integral para `prestamos_terceros`.
+  - Liberadas las reglas actualizadas de **Firebase Storage** (`storage.rules`) para evidencias técnicas y logotipos dinámicos de configuración.
 
 ---
 
-## [2.4.0] - 2026-10-05
+## [2.2.1] - 2026-10-18 — Panel de Acceso Rápido (Quick Login) para Pruebas y Sustentación Demo ⚡🔑
 
-### 🚀 Preparación para Producción & Reset de Datos
-- **Eliminación de Accesos Rápidos de Prueba ([login_screen.dart](file:///c:/VSCODE/control_gas_app/lib/screens/login_screen.dart)):**
-  - Removidos los botones de bypass "Entrar Dueño", "Entrar Admin" y credenciales simuladas.
-  - El formulario de inicio de sesión ahora exige autenticación formal y exclusiva contra Firebase Auth.
-  - Eliminados métodos obsoletos de prueba en [auth_provider.dart](file:///c:/VSCODE/control_gas_app/lib/providers/auth_provider.dart) y [auth_service.dart](file:///c:/VSCODE/control_gas_app/lib/services/auth_service.dart).
-- **Módulo de Mantenimiento y Reset Total de Firestore ([firestore_service.dart](file:///c:/VSCODE/control_gas_app/lib/services/firestore_service.dart)):**
-  - Implementado `limpiarTodosLosDatos()` para purgar en lotes (`WriteBatch`) las colecciones operativas: `lotes`, `viviendas`, `etapas`, `trabajadores`, `asistencias`, `semanas`, `gastos` y `prestamos`.
-  - Preserva intactos los registros de autenticación (`usuarios`) y los parámetros base de tarifas (`configuracion`).
-- **Control de Seguridad de Producción en UI ([configuracion_screen.dart](file:///c:/VSCODE/control_gas_app/lib/screens/configuracion_screen.dart)):**
-  - Añadida tarjeta "Zona de Mantenimiento de Producción" accesible únicamente por el Dueño del proyecto.
-  - Confirmación de doble factor mediante modal de advertencia y validación obligatoria del PIN de seguridad de 4 dígitos antes de ejecutar el vaciado.
+### 🚀 [Feat & DevTools] Inicio Rápido con Autenticación Real en Firebase
+- **Autenticación Real Integrada (`_accesoRapido`):**
+  - Implementado flujo de autenticación real contra Firebase Auth mediante `auth.iniciarSesion()`, garantizando la emisión legítima de credenciales JWT para satisfacer las reglas de seguridad de Firestore (`request.auth.uid`) y Storage.
+- **Interfaz Visual en `LoginScreen`:**
+  - Incorporada sección discreta y estilizada titulada *"⚡ Acceso Rápido (Modo Pruebas / Demo)"* con botones para acceso con rol **Dueño / Admin** e inicio preparado para **Técnico**.
+  - Control de visibilidad global mediante la constante `LoginScreen.mostrarAccesosRapidos = true` para activación o descarte inmediato.
+  - Manejo preventivo de errores: alertas claras en `SnackBar` si las credenciales de demo aún tienen marcadores de posición o si el usuario no existe en Firebase Auth.
 
 ---
 
-## [2.3.0] - 2026-10-05
+## [2.2.0] - 2026-10-18 — Arquitectura de Suscripción Reactiva Segura y Sincronización en Tiempo Real de Cuentas por Cobrar ⚡📡
 
-### 🎨 Identidad Visual Corporativa "ELECTRO - GAS"
-- **Tema y Paleta Institucional:** Configurado el azul corporativo `#0500D0` como `primaryColor`, `colorScheme.primary` y `appBarTheme` global en [main.dart](file:///c:/VSCODE/control_gas_app/lib/main.dart).
-- **Gestión de Assets de Logo:** Registrados los assets corporativos en `pubspec.yaml` (`assets/images/logo.png` y `lib/img/logo.jpeg`).
-- **Íconos de Aplicación (Launcher Icons):** Configurado y ejecutado `flutter_launcher_icons` generando los íconos oficiales para Android, iOS, Web y Windows.
-- **Rediseño de Login ([login_screen.dart](file:///c:/VSCODE/control_gas_app/lib/screens/login_screen.dart)):** Encabezado con tarjeta de logo destacado (ancho 220 px), borde suave, sombra sutil y tipografía corporativa.
-- **Branding en Interfaz y Documentos:**
-  - `AppBar` con logotipo compacto e indicador de rol en [home_dashboard_screen.dart](file:///c:/VSCODE/control_gas_app/lib/screens/home_dashboard_screen.dart).
-  - Nuevo `Drawer` lateral institucional con membrete, logotipo, datos de sesión activa y navegación rápida.
-  - Membrete con logo de "ELECTRO - GAS" en encabezados de comprobantes PDF generados en [pdf_service.dart](file:///c:/VSCODE/control_gas_app/lib/services/pdf_service.dart).
-
-### 📷 Visor y Descarga de Fotos de Evidencias (Lightbox)
-- **Lightbox Interactivo ([foto_lightbox_dialog.dart](file:///c:/VSCODE/control_gas_app/lib/widgets/foto_lightbox_dialog.dart)):**
-  - Despliegue en pantalla completa con zoom interactivo (pinch-to-zoom de 0.8x a 4.5x) y deslizamiento horizontal entre fotos con `PageView` e `InteractiveViewer`.
-  - Contador de evidencias e indicador de casa.
-- **Descarga Directa Multiplataforma ([download_helper.dart](file:///c:/VSCODE/control_gas_app/lib/utils/download_helper.dart)):**
-  - En Web: Descarga directa al navegador mediante `Blob` y `AnchorElement`.
-  - En Móvil: Guardado local en almacenamiento y compartición nativa con confirmación mediante `SnackBar`.
-  - Integrado tanto en las miniaturas de edición de vivienda como desde el acceso rápido en la tarjeta de la grilla en [lote_detail_screen.dart](file:///c:/VSCODE/control_gas_app/lib/screens/lote_detail_screen.dart).
-
-### 📊 Detalle de Asistencia de Ayudantes y Exportación a Excel
-- **Desglose de Fechas Trabajadas en Nómina ([nomina_screen.dart](file:///c:/VSCODE/control_gas_app/lib/screens/nomina_screen.dart)):**
-  - Tarjetas de ayudantes con sección expandible (`ExpansionTile`) que lista las fechas exactas con chips de asistencia (`[✓ Lun 02/Oct]`, etc.) consultadas reactivamente desde Firestore.
-- **Exportación de Planilla a Excel ([excel_service.dart](file:///c:/VSCODE/control_gas_app/lib/services/excel_service.dart)):**
-  - Botón "Descargar Excel de Asistencia" en la pestaña de ayudantes.
-  - Generación de libro `.xlsx` estilizado con encabezado institucional en azul `#0500D0`, columnas de ayudante, días asistidos, fechas exactas, tarifa diaria, devengado, vales descontados, saldo neto a pagar y fila de totales consolidados.
+### 🛡️ [Fix & Architecture] Ciclo de Vida de Streams y Reactividad en Cloud Firestore
+- **Sincronización de Streams con `FirebaseAuth.authStateChanges()`:**
+  - Resuelta la causa raíz de streams caídos/muertos: las suscripciones de Firestore en `ProyectoProvider` ya no se lanzan indiscriminadamente en el constructor antes del login, eliminando las excepciones de `permission-denied` que cerraban permanentemente los listeners al arrancar la app.
+  - Al autenticar un usuario activo, se inicializan de forma reactiva y ordenada los streams de todas las colecciones (`configuracion`, `lotes`, `etapas`, `viviendas`, `trabajadores`, `gastos`, `ingresos`, `prestamos_terceros`, `semanas`).
+  - Al cerrar sesión, se cancelan limpiamente todas las `StreamSubscription` y se purga el estado en memoria para evitar filtraciones entre sesiones.
+- **Reglas de Seguridad para Cuentas por Cobrar (`firestore.rules`):**
+  - Añadida la regla de acceso autorizada para la colección `prestamos_terceros` (`match /prestamos_terceros/{document=**}`), resolviendo el bloqueo permanente de seguridad en consultas y mutaciones de cartera.
+- **Mutaciones Optimistas y Delegación a Provider (`ContabilidadScreen`):**
+  - Centralizadas las operaciones de creación, edición, abonos y eliminación de Cuentas por Cobrar (`PrestamoTerceroModel`) e Ingresos (`IngresoModel`) en `ProyectoProvider`.
+  - Implementada actualización optimista inmediata en memoria ($0\text{ ms}$) y llamada a `notifyListeners()`, garantizando que la lista de Cuentas por Cobrar y los saldos de cartera se reflejen de inmediato sin requerir recargar la página.
+- **Resiliencia en Stream de Cartera (`FirestoreService`):**
+  - `streamPrestamosTerceros()` optimizado: ordenamiento determinista en memoria para prevenir omisión de documentos con formatos de fecha mixtos o falta de índices compuestos.
 
 ---
 
-## [2.2.1] - 2026-10-05
+## [2.1.1] - 2026-10-18 — Desacople Total de Assets Estáticos y Motor PDF de Marca Blanca Dinámico 📄🚀
 
-### 🐛 Corrección de Aserción `DropdownButton's value` en Viviendas con Técnico Eliminado
-- **Validación Segura de Valor Nulo en Dropdown:**
-  - En [lote_detail_screen.dart](file:///c:/VSCODE/control_gas_app/lib/screens/lote_detail_screen.dart), antes de construir el `DropdownButtonFormField`, se valida si `vivienda.tecnicoId` pertenece a la lista de técnicos activos disponibles (`tecnicosDisponibles`).
-  - Si el técnico existe y está activo, se asigna su ID como `value`.
-  - Si el técnico fue eliminado o está inactivo, se asigna estrictamente `value: null`. Esto previene de raíz la aserción interna de Flutter `"There should be exactly one item with [DropdownButton]'s value"`.
-- **Eliminación de Items Duplicados al Reasignar:**
-  - Se eliminó la inyección condicional de ítems dinámicos con el ID del técnico seleccionado que causaba colisiones de valores duplicados al intentar elegir otro técnico.
-- **Indicador Visual Amigable:**
-  - Cuando el técnico anterior no está disponible o fue eliminado, el desplegable muestra el texto `"Técnico eliminado / No disponible - Seleccione uno nuevo"` junto a un banner de advertencia en color ámbar informando al usuario el nombre del técnico anterior.
-- **Reasignación y Persistencia Fluida:**
-  - Permite a los usuarios seleccionar un nuevo técnico activo y guardar la vivienda en Firestore con total normalidad sin romper la interfaz.
-
----
-
-## [2.2.0] - 2026-10-05
-
-### 🐛 Corrección de Excepciones y Manejo de Técnicos Eliminados
-- **Corrección de `Assertion failed` al abrir viviendas con técnicos eliminados:**
-  - En `LoteDetailScreen`, se reemplazó la búsqueda directa por una búsqueda segura (`firstOrNull`) en la lista de trabajadores.
-  - Si una vivienda posee un `tecnicoId` de un trabajador que fue eliminado o está inactivo, el `DropdownButtonFormField` genera un `DropdownMenuItem` seguro para ese identificador, mostrando la etiqueta `"Técnico no disponible / Eliminado"` (o `"(Inactivo)"`). Esto evita la falla de aserción interna de Flutter (`items.where((item) => item.value == value).length == 1`).
-  - La tarjeta visual de la vivienda en la grilla (`_buildCasaCard`) muestra claramente si el técnico fue eliminado en color de advertencia (`Técnico no disponible / Eliminado`).
-  - **Trazabilidad histórica:** Se preserva el `tecnicoId` en el documento de la vivienda en Firestore al eliminar un trabajador para no alterar el historial de auditoría ni el registro de obras.
-
-### 📊 Corrección de Viviendas Terminadas en Comprobantes PDF
-- **Reparación de casas completadas en `PdfService`:**
-  - Se garantiza el paso explícito de la lista filtrada de viviendas (`viviendasCompletadas`) correspondientes al técnico y a la semana activa.
-  - Validación del cálculo exacto: $\text{Total Bruto} = \text{Cantidad de Casas Terminadas} \times \text{Tarifa por Casa}$.
-  - Los botones de compartir PDF en la pestaña de Técnicos y en la Planilla consolidada envían ahora el detalle enriquecido de viviendas y vales correspondientes.
-
-### 🎨 Rediseño y Separación de Plantillas PDF
-- **Plantilla 1 — Comprobante para Ayudante de Obra:**
-  - Encabezado institucional con datos del trabajador (Nombre, Cédula, Rol, Período de Semana).
-  - Tabla de Devengados por asistencia: Jornales trabajados $\times$ Tarifa diaria $=$ Total devengado.
-  - Tabla de Descuentos / Vales: Desglose numerado con fecha, concepto y valor individual de cada adelanto, con totalizador.
-  - Resumen financiero: Total Ganado $-$ Total Vales $-$ Pagos Parciales $=$ **Neto a Pagar**.
-  - Sección de firmas formal (Firma Empleado y Autorizado por Administración).
-- **Plantilla 2 — Comprobante para Técnico e Instalador:**
-  - Encabezado con datos del técnico y período liquidado.
-  - Tabla detallada de obras terminadas: Columnas `#`, `Código Casa`, `Lote / Ubicación`, `Fecha Terminación`, `Tarifa Unit.`, `Subtotal`.
-  - Fila resumen de **Total Casas Completadas** y **Total Bruto Generado**.
-  - Tabla de Descuentos / Vales tomados en la semana.
-  - Resumen financiero: Total Casas $-$ Vales Descontados $=$ **Neto a Pagar**.
-  - Sección de firmas para recepción conforme y control de obra.
+### 🛠️ [Refactor & Fix] Desacople de Assets Locales y Reportes Dinámicos (`PdfService`)
+- **Desacople de Dependencias Estáticas Locales:**
+  - Eliminado por completo el uso de `rootBundle.load` y cualquier referencia fija a `assets/images/logo.png`, `lib/img/logo.jpeg` o imágenes estáticas previas en la generación de PDFs.
+- **Carga Asíncrona Resiliente de Logos (`_cargarLogoEmpresa`):**
+  - Implementada descarga dinámica en memoria desde la URL remota (`configuracion.logoUrl`) subida a Firebase Storage.
+  - Blindada con timeout preventivo de 5 segundos y captura integral de excepciones para evitar que fallos de red o políticas de CORS interrumpan o bloqueen la exportación de documentos.
+- **Encabezado Vectorial y Fallback Tipográfico Autónomo (`_construirEncabezado`):**
+  - Implementado banner nativo estilizado que renderiza las iniciales de la empresa (`fallbackInitials`), el nombre dinámico institucional (`configuracion.nombreEmpresa`) y el color de acento (`configuracion.colorPrimario`) en ausencia de logotipo o ante errores de red.
+- **Cobertura Homogénea en Todos los Documentos PDF:**
+  - Aplicado en `generarComprobanteAyudante`, `generarComprobanteTecnico`, `exportarReporteConsolidadoGeneral`, `generarComprobanteGastoPdf`, `generarComprobanteGastosConsolidadoPdf`, `generarEstadoResultadosPdf` y `generarCuentaCobroPdf`.
 
 ---
 
-## [2.1.0] - 2026-10-05
+## [2.1.0] - 2026-10-18 — Personalización de Marca y Apariencia (Marca Blanca) 🎨🏷️
 
-### 🚨 Correcciones Críticas de Reactividad y Bugs Resueltos
-- **Crash `setState() called after dispose()` en `LoteDetailScreen`:**
-  - Se agregó verificación `if (bottomSheetCtx.mounted)` en el bloque `finally` de `_abrirModalDetalleCasa` evitando que `setModalState` sea ejecutado después de invocar `Navigator.pop`.
-- **Sincronización Automática de Asistencia en Nómina:**
-  - Optimizado el método `sincronizarDiasAsistidosAyudante` en `FirestoreService` para que, en caso de que un ayudante recién registrado no exista en `semana.registros`, sea insertado de forma automática con la tarifa vigente de la configuración global.
-- **Sincronización de Casas Terminadas en Nómina de Técnicos:**
-  - En `LoteDetailScreen`, al marcar una casa como `"Terminada"`, se auto-vincula el `semanaId` activo.
-  - En `FirestoreService`, se mejoró `sincronizarCasasTerminadasTecnico` para incorporar al técnico en `semana.registros` si no figuraba previamente, y validar tanto `semanaId` como el rango de fechas de la semana activa.
-- **Limpieza de Stream Redundante en Pestaña Personal:**
-  - Eliminado el `StreamBuilder` anidado redundante en `_construirPestanaPersonal` de `NominaScreen`, optimizando el consumo de streams en Firestore.
-- **Corrección de Lints de Dart:**
-  - Corregido el lint `unnecessary_underscores` en el separador del checklist de asistencia en `HomeDashboardScreen`.
-  - Agregado guard `mounted` al DatePicker de selección de fecha de asistencia.
-
----
-
-### 🎨 Reestructuración de Vistas en Nómina (`NominaScreen`)
-- **Implementación de Interfaz de 4 Pestañas Especializadas:**
-  1. **📊 Planilla:** Consolidado general semanal con balance financiero (Total Generado, Vales, Pagado, Pendiente) y desglose por grupos.
-  2. **👷 Ayudantes:** Tarjetas exclusivas para personal con rol `"Ayudante"`. Visualización de días trabajados (con controles rápidos `+`/`-`), tarifa diaria, vales descontados y saldo neto. Botones de acción: `+ Registrar Día`, `+ Adelanto`, `Compartir PDF`.
-  3. **🔧 Técnicos:** Tarjetas exclusivas para personal con rol `"Técnico"` o `"Dueño con labor de Técnico"`. Contador destacado en gradiente de **Casas Terminadas esta Semana**, tarifa por casa, total generado bruto, vales descontados y total neto a pagar. Botones de acción: `Ver Casas` (con modal deslizable detallando códigos de viviendas terminadas), `+ Adelanto`, `Compartir PDF`.
-  4. **👥 Personal:** Catálogo general de trabajadores con edición en línea, switches de activación/desactivación y registro de nuevo personal.
+### 🏢 [Feat] Identidad de Empresa y Marca Blanca
+- **Modelo de Configuración Dinámico (`ConfiguracionModel`):**
+  - Incorporados los campos `nombreEmpresa`, `logoUrl` y `colorPrimario` con valores por defecto seguros y retrocompatibilidad total.
+  - Implementado método `copyWith()` y serialización completa en Firestore (`configuracion/general`).
+- **Almacenamiento Multiplataforma en Firebase Storage (`StorageService`):**
+  - Implementado método `subirLogoEmpresa(Uint8List bytes, String extension)` en la ruta `configuracion/logo_empresa.{ext}` con cabeceras `cacheControl: 'no-cache'`.
+  - Habilitada regla de lectura/escritura en `storage.rules` para logos de configuración institucional.
+- **Interfaz de Gestión de Marca (`ConfiguracionScreen`):**
+  - Tarjeta destacada de **"Identidad de Empresa y Marca"** con selector de nombre, visor en tiempo real de logotipo y cargador multiplataforma de imágenes con `FilePicker`.
+  - Paleta de selección rápida de 6 tonos estándar de ingeniería (Azul `#0500D0`, Azul Marino `#0D47A1`, Naranja `#E65100`, Verde `#1B5E20`, Rojo `#B71C1C`, Gris Grafito `#37474F`) más diálogo para código Hexadecimal personalizado.
+- **Reactividad Global del Tema (`main.dart`):**
+  - `MaterialApp` ahora reacciona en tiempo real a los cambios en `colorPrimario` y `nombreEmpresa` a través de `ProyectoProvider`, generando armónicamente el `ColorScheme.fromSeed` y `AppBarTheme`.
+- **Reportes PDF Adaptables (`PdfService`):**
+  - Los encabezados, pies de página y membretes oficiales de comprobantes de nómina, egresos, estado de resultados y cuentas de cobro adaptan automáticamente el nombre de la empresa y su color corporativo.
+  - Soporte de descarga de logo desde URL remota (`logoUrl`) con fallback tipográfico institucional (`'OC'` o iniciales de la empresa).
 
 ---
 
-### 🧹 Optimización y Arquitectura de Código
-- **Validación con `flutter analyze`:** Proyecto verificado con 0 advertencias y 0 errores de compilación (`No issues found!`).
-- **Persistencia limpia y desacoplada:** Separación clara entre modelos puros (`/lib/models/`), capa de servicios (`/lib/services/`), proveedores de estado (`/lib/providers/`) y vistas modulares (`/lib/screens/`).
+## [2.0.0] - 2026-10-18 — Migración a Firebase Independiente, Neutralización Total de Marca y Generalización Funcional a ObraControl 🏗️⚡
+
+### 🚀 [Core & Cloud] Migración e independización completa de infraestructura Firebase
+- **Nuevo Entorno Firebase Dedicado:**
+  - Configurado y vinculado el proyecto independiente **`obracontrol-f5bdf`** (Número de Proyecto: `637695930390`).
+  - Sincronizados y actualizados los archivos `.firebaserc`, `firebase.json` y `lib/firebase_options.dart`.
+  - Desacoplado definitivamente el Hosting corporativo original y eliminadas todas las credenciales de producción externa.
+- **Unificación de Identificador Android:**
+  - Actualizado `namespace` y `applicationId` a **`com.tuempresa.obracontrol`** en `android/app/build.gradle.kts`.
+  - Reubicada la clase nativa a `android/app/src/main/kotlin/com/tuempresa/obracontrol/MainActivity.kt`.
+  - Sincronizado `android/app/google-services.json` con el nuevo proyecto y paquete.
+  - Verificada la compilación exitosa en modo debug (`flutter build apk --debug`).
+- **Configuración Web Limpia:**
+  - Plataforma Web registrada en Firebase con App ID `1:637695930390:web:551ffbbf26b91f242d4537`.
+  - Verificada la compilación de producción (`flutter build web --release`).
+
+### 🛡️ [Security] Reglas de Seguridad Estandarizadas (RBAC)
+- **`firestore.rules` (Local):**
+  - Implementado modelo de control de acceso basado en roles (`admin` y `dueno`) contra la colección `usuarios/{uid}`.
+  - Bloqueo total de accesos no autenticados y blindaje de colecciones operativas (`lotes`, `viviendas`, `semanas`, `trabajadores`, `gastos`, `ingresos`, `prestamos`).
+- **`storage.rules` (Local):**
+  - Protección estricta de evidencias fotográficas en `viviendas/{viviendaId}/{fileName}` con validación de tipo de contenido (`image/*`) y límite de 10 MB.
+
+### 🎨 [Branding & UI] Erradicación de marca corporativa anterior y adopción de ObraControl
+- **Identidad Institucional en Pantallas:**
+  - `MaterialApp`: Título general actualizado a `"ObraControl"`.
+  - `LoginScreen`: Sustituido el logo bitmap por una insignia vectorial de ingeniería (`Icons.engineering_rounded`) con degradado institucional en azul primario y subtítulo *"Gestión Operativa y Financiera de Obras"*.
+  - `HomeDashboardScreen`: Actualizados el AppBar, el Drawer y el pie de versión a `"ObraControl v1.0.0 - Plataforma de Control de Obras e Ingeniería"`.
+  - `ConfiguracionScreen`: Titular predeterminado de cuentas bancarias actualizado a `"ObraControl Ingeniería S.A.S."`.
+- **Motor de Reportes (PDF y Excel):**
+  - `PdfService`: Membretes oficiales actualizados a `"ObraControl - Gestión de Obras e Ingeniería"`.
+  - Cláusula de pagaré en Cuentas de Cobro adaptada dinámicamente al titular configurado (`DEBO Y PAGARÉ A LA ORDEN DE [TITULAR]`) con fallback a `"OBRACONTROL INGENIERÍA"`.
+  - Fallback tipográfico institucional con badge `"OC"` en encabezados PDF.
+  - `ExcelService`: Encabezados y textos de compartición actualizados a `"PLANILLA DE ASISTENCIA Y NÓMINA - OBRACONTROL"`.
+- **Generalización de Conceptos de Obra:**
+  - Sustituidas referencias específicas de gas por conceptos estándar de ingeniería civil e instalaciones técnicas: *"Ejecución de obra / instalación técnica en unidades certificadas"*.
 
 ---
 
-## [2.0.0] - Versión Base
-- Funcionalidad inicial de control de viviendas, etapas, lotes, gastos y registro básico de nómina semanal.
+## [1.6.0] - 2026-10-13 — Cuentas por Pagar (CxP), Generador de Cuentas de Cobro en PDF con Multiselección e Instrucciones Bancarias 💼🧾
+
+### 🚀 [Feat] Expansión del módulo Financiero a 4 pestañas con Cuentas por Pagar (CxP)
+- **TabBar Gerencial Estandarizado ([contabilidad_screen.dart](file:///c:/VSCODE/Proyecto_Grado/ObraControl/lib/screens/contabilidad_screen.dart)):**
+  - `[1. Rendimiento y P&L | 2. Cuentas por Cobrar | 3. Cuentas por Pagar | 4. Gastos de Obra]`.
+- **Módulo de Cuentas por Pagar (CxP):**
+  - Consolidación reactiva de pasivos de mano de obra (técnicos y ayudantes) y compras a crédito con proveedores.
+  - Acción rápida de abono directo con persistencia atómica en Firestore.
+
+### 📄 [Feat] Generación de Cuenta de Cobro en PDF con Multiselección
+- Multiselección de cartera exigible de frentes de obra y préstamos a terceros.
+- Documento formal con folio estandarizado (`CC-YYYYMMDD-HHmm`), tabla detallada de conceptos, valor en letras en español ("PESOS M/CTE") e instrucciones bancarias completas.
+- Rigor en liquidación contractual: cálculo de unidades equivalentes pendientes sin distorsión de tarifa unitaria.
+
+---
+
+## [1.5.0] - 2026-10-08 — Importación Masiva desde Excel, Motor de Saneamiento Anti-Tofu y Comprobantes Consolidados 📊📑
+
+### 🚀 [Feat] Importador Masivo de Unidades desde Excel (`ExcelService`)
+- Parseo en memoria de archivos `.xlsx` web-safe sin dependencias de sistema de archivos local (`leerViviendasDesdeExcel`).
+- Creación atómica de lotes y unidades en Firestore vía `WriteBatch`.
+
+### 🛡️ [Fix] Motor de Saneamiento Anti-Tofu (`sanitizarTexto`)
+- Depuración sistemática de emojis y glifos Unicode no soportados en fuentes PDF base, garantizando documentos limpios y profesionales.
+
+---
+
+## [1.0.0] - 2026-09-20 — Arquitectura Base del Sistema de Control de Obras 🏗️
+
+- Modelo relacional Firestore: frentes de obra (`lotes`), unidades habitacionales (`viviendas`), etapas constructivas (`etapas`), semanas de corte (`semanas`), personal (`trabajadores`) y asistencias (`asistencias`).
+- Liquidación semanal dual: técnicos a destajo por unidad certificada y ayudantes por jornal de asistencia diaria.
+- Visor Lightbox de fotos de avance técnico con zoom interactivo y compresión client-side.
+- Control de acceso por roles (`dueno` y `admin`) y zona de configuración de tarifas protegida por PIN.
